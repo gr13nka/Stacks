@@ -8,12 +8,12 @@ import { usePointerGesture } from '../lib/gesture';
 
 type TextButtonProps = {
   label: string;
-  tone?: 'active' | 'muted' | 'accent';
+  tone?: 'active' | 'muted' | 'accent' | 'paper';
   onTap?: () => void;
   style?: CSSProperties;
 };
 
-const TONE = { active: COLOR.ink, muted: COLOR.muted, accent: COLOR.accent } as const;
+const TONE = { active: COLOR.ink, muted: COLOR.muted, accent: COLOR.accent, paper: COLOR.paper } as const;
 
 export function TextButton({ label, tone = 'active', onTap, style }: TextButtonProps) {
   const [pressed, setPressed] = useState(false);

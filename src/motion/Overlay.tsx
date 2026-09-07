@@ -10,7 +10,7 @@
 
 import { motion } from 'framer-motion';
 import type { CSSProperties, ReactNode } from 'react';
-import { BACK, CHROME, COLOR, FRAME, MOTION, TYPE } from '../tokens';
+import { BACK, CHROME, COLOR, FRAME, LAYER, MOTION, TYPE } from '../tokens';
 import { usePointerGesture } from '../lib/gesture';
 import { spring } from './springs';
 
@@ -39,7 +39,7 @@ export function Overlay({ layer, chrome, onTapEmpty, hint, children, style }: Ov
       />
       {children}
       <motion.div
-        style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+        style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: LAYER.chrome }}
         initial={{ y: CHROME.rise, opacity: 0 }}
         animate={{ y: 0, opacity: 1, transition: spring(MOTION.chrome) }}
         exit={{ y: CHROME.rise, opacity: 0, transition: spring(MOTION.chrome) }}

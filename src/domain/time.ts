@@ -54,3 +54,9 @@ export const MONTH_NAMES = [
 export function monthName(month: number): string {
   return MONTH_NAMES[month - 1] ?? '';
 }
+
+/** 'YYYY-MM-DD' → '5 november 2024'. */
+export function formatDay(key: string): string {
+  const { year, month, day } = splitDayKey(key);
+  return `${day} ${monthName(month)} ${year}`;
+}

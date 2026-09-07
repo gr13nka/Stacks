@@ -51,7 +51,7 @@ export function Print({ photo, w, h, border, size, stamp = false, tape = false, 
         {badge && photo.rawPath && <RawBadge />}
         {stamp && <DateStamp ms={takenMs(photo)} variant={stamp} />}
       </div>
-      {tape && <Tape w={w} />}
+      {tape && <RejectTape w={w} />}
       <div style={{ position: 'absolute', right: 0, top: 0, width: 1, height: '100%', background: COLOR.edge }} />
       <div style={{ position: 'absolute', left: 0, bottom: 0, width: '100%', height: 1, background: COLOR.edge }} />
     </div>
@@ -81,7 +81,7 @@ function RawBadge() {
 }
 
 /** The reject tape: an orange strip across the whole slab, multiplied into the print. */
-function Tape({ w }: { w: number }) {
+export function RejectTape({ w }: { w: number }) {
   const tapeW = w * PRINT.tape.w;
   const tapeH = Math.round(PRINT.tape.h * Math.min(1, w / REJECTS.print.w)); // full height from the reject grid size up
   return (

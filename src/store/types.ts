@@ -17,7 +17,7 @@ import type { RectRot } from '../tokens';
 
 export type Screen = 'main' | 'deck' | 'rejects' | 'shredder' | 'settings';
 export type Mode = 'calendar' | 'places';
-export type ShredPhase = 'idle' | 'feeding' | 'trashing' | 'done' | 'failed';
+export type ShredPhase = 'idle' | 'feeding' | 'trashing' | 'done' | 'failed' | 'restored';
 
 export type State = {
   hydrated: boolean;
@@ -50,7 +50,8 @@ export type State = {
   /** Geocode results keyed by Place.id; null = nothing within 100 km; absent = not looked up yet. */
   placeNames: Record<string, PlaceLabel | null>;
 
-  shred: { phase: ShredPhase; report: TrashReport | null };
+  /** removed = photos that left the catalog in the last shred (RAW twins not counted). */
+  shred: { phase: ShredPhase; report: TrashReport | null; removed: number };
   /** The last successful shred, kept so undo can restore it and rescan its volumes. */
   lastShred: { items: TrashedFile[]; volumeIds: string[] } | null;
   notice: string | null;

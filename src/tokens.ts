@@ -189,6 +189,12 @@ export const DECK = {
   flyX: 620,           // where a kept card flies to
   flyRot: 22,
   stampInset: 14,      // date stamp inset from the image corner
+  dragY: 0.3,          // vertical drag is damped to this fraction
+  hint: { dx: 40, fade: 40 },   // out tape / keep tick fade in from |dx| = dx over `fade` px
+  tick: { size: 56, inset: 22 }, // the blue keep tick, top-right inside the card
+  pileSize: 4,         // cards mounted at once (top + DECK.behind)
+  edgeJolt: 1.08,      // reject edge scale bump when a card lands on it
+  edgeCount: { x: 62, y: 604 }, // the reject count next to the edge
 } as const;
 
 export const REJECTS = {
@@ -200,6 +206,10 @@ export const REJECTS = {
   print: { w: 88, h: 88 },
   hero: { x: 24, y: 96, w: 96, h: 128, rot: 0 },
   button: { y: 760 },
+  captionH: 26,        // the day caption row above each group
+  groupGap: 14,        // space after a group's last row
+  scrollerH: 608,      // gridY .. button.y − 12
+  emptyY: 300,         // "nothing to shred" caption
 } as const;
 
 export const SHREDDER = {
@@ -209,18 +219,42 @@ export const SHREDDER = {
   strips: 7,
   stripFall: 300,      // px a strip falls below the seam before fading out
   feedStagger: 260,    // ms between successive prints entering the seam
+  maxFeedMs: 6000,     // a big pile compresses the stagger so the whole feed fits in this
   jolt: 1.12,          // seam scaleY when a print is swallowed
   button: { y: 760 },
+  print: { w: 200, h: 200, border: 3 }, // prints on the pile (strips are print.w / strips wide)
+  sink: 0.6,           // fraction of the print's height that goes below the seam
+  feedScale: 0.92,     // print scale at the end of the feed
+  knee: 0.55,          // feed progress at which the seam jolts and the strips appear
+  stripStep: 9,        // each strip trails the previous by this many px
+  stripTilt: 2,        // strips alternate ± this rotation
+  flightStagger: 15,   // ms between prints flying in from the reject grid
+  maxFlights: 24,      // prints beyond this many just appear on the pile
+  pileVisible: 12,     // seated prints drawn at once (the rest wait under the top ones)
+  slotW: 240,          // the lighter seam slot on the cavity
+  statusY: 372,        // status caption above the seam
+  counterDy: 24,       // countdown caption below the seam slot
+  undoMs: 20000,       // undo stays available this long after a shred
+  z: { pile: 10, cavity: 500, strips: 510, flight: 600 }, // inside the shredder overlay; chrome is LAYER.chrome
 } as const;
 
-export const SETTINGS = { rowY0: 96, rowH: 52, labelX: 24, valueRight: 24 } as const;
+export const SETTINGS = {
+  rowY0: 96,
+  rowH: 52,
+  labelX: 24,
+  valueRight: 24,
+  scroller: { y: 56, h: 708 },  // TOPBAR.h .. BACK.y
+  stepW: 32,                    // width of the − / + buttons
+  sectionGap: 16,
+} as const;
 
 // Back affordance: the tappable band at the bottom of every overlay and its hint line.
 export const BACK = { y: 764, h: 80, hintY: 800 } as const;
 
 // Stacking of the screen overlays inside the frame. The icon bar sits above
-// every screen but below prints in flight.
-export const LAYER = { main: 0, deck: 10, rejects: 20, shredder: 30, settings: 40, iconBar: 50, flight: 100 } as const;
+// every screen but below prints in flight. `chrome` is local to an overlay:
+// its chrome slot always sits above the overlay's own content.
+export const LAYER = { main: 0, deck: 10, rejects: 20, shredder: 30, settings: 40, iconBar: 50, flight: 100, chrome: 1000 } as const;
 
 /** Rises from 0 at the ends to 1 in the middle: the shade / lift envelope. */
 export function hump(t: number): number {

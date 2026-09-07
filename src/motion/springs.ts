@@ -2,7 +2,7 @@
 // Keeping this conversion in one place is what lets tokens.ts stay a plain
 // data file with no framer-motion (or React Native Reanimated) import.
 
-import type { Transition } from 'framer-motion';
+import type { AnimationPlaybackControls, Transition } from 'framer-motion';
 import type { Spring } from '../tokens';
 import { hump } from '../tokens';
 
@@ -32,3 +32,8 @@ export function valueSpring(s: Spring, velocity?: number) {
 }
 
 export { hump };
+
+/** Resolves when an imperative animate() finishes (or is stopped). */
+export function settled(controls: AnimationPlaybackControls): Promise<void> {
+  return new Promise((resolve) => controls.then(() => resolve()));
+}

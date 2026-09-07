@@ -29,6 +29,8 @@ import { monthsOf } from '../domain/calendar';
 import { deckQueue, stackState } from '../domain/deck';
 import type { PhotoIndex, StackState } from '../domain/deck';
 import { SOMEWHERE_ID, clusterPlaces } from '../domain/places';
+import { groupRejectsByDay } from '../domain/rejects';
+import type { RejectGroup } from '../domain/rejects';
 import { buildStacks } from '../domain/stacks';
 import { DEFAULT_SETTINGS, GAP_HOURS } from './types';
 import type { Mode, PersistedState, Screen, State } from './types';
@@ -54,7 +56,7 @@ function initialState(): State {
     placeLabels: {},
     settings: { ...DEFAULT_SETTINGS },
     placeNames: {},
-    shred: { phase: 'idle', report: null },
+    shred: { phase: 'idle', report: null, removed: 0 },
     lastShred: null,
     notice: null,
   };
@@ -173,6 +175,7 @@ const rejectsOf = memo1((photos: Photo[], decisions: DecisionMap) =>
 const queueOf = memo1((stack: Stack | undefined, byId: PhotoIndex, decisions: DecisionMap) =>
   stack ? deckQueue(stack, byId, decisions) : EMPTY_PHOTOS,
 );
+const rejectGroupsOf = memo1((rejects: Photo[], stacks: Stack[]) => groupRejectsByDay(rejects, stacks));
 
 export const selectPhotosById = (s: State): PhotoIndex => photosById(s.photos);
 export const selectStacks = (s: State): Stack[] => stacksOf(s.photos, s.settings.gapHours);
@@ -193,6 +196,8 @@ export const selectStackProgress = (s: State, id: string): number => {
 /** Rejected photos, most recently rejected first. */
 export const selectRejects = (s: State): Photo[] => rejectsOf(s.photos, s.decisions);
 export const selectRejectCount = (s: State): number => selectRejects(s).length;
+/** Rejects grouped by stack day, newest day first (the reject pile's grid order). */
+export const selectRejectGroups = (s: State): RejectGroup[] => rejectGroupsOf(selectRejects(s), selectStacks(s));
 export const selectDeckQueue = (s: State, stackId: string | null): Photo[] =>
   queueOf(selectStackById(s, stackId), selectPhotosById(s), s.decisions);
 
@@ -297,9 +302,10 @@ async function labelNewPlaces(): Promise<void> {
   }
 }
 
-function prefetchQueue(stackId: string): void {
+/** Warms the 1600 thumbs of queue[from .. PREFETCH_AHEAD): the whole window on open, the newcomer after a decision. */
+function prefetchQueue(stackId: string, from = 0): void {
   const ids = selectDeckQueue(state, stackId)
-    .slice(0, PREFETCH_AHEAD)
+    .slice(from, PREFETCH_AHEAD)
     .map((p) => p.id);
   if (ids.length > 0) void api.prefetchThumbs(ids, 1600).catch(() => {});
 }
@@ -323,7 +329,7 @@ function goBack(): void {
     screen: previous,
     exiting: s.screen,
     history: s.history.slice(0, -1),
-    shred: s.screen === 'shredder' ? { phase: 'idle', report: null } : s.shred,
+    shred: s.screen === 'shredder' ? { phase: 'idle', report: null, removed: 0 } : s.shred,
   });
 }
 
@@ -382,7 +388,7 @@ export const actions = {
     const photo = selectPhotosById(state).get(photoId);
     if (!photo) return;
     setState((s) => ({ decisions: { ...s.decisions, [photo.path]: { d, at: Date.now() } } }));
-    if (state.openStackId) prefetchQueue(state.openStackId);
+    if (state.openStackId) prefetchQueue(state.openStackId, PREFETCH_AHEAD - 1);
   },
 
   undecide(photoId: string): void {
@@ -400,7 +406,7 @@ export const actions = {
   },
 
   openShredder(): void {
-    setState((s) => ({ screen: 'shredder', history: pushHistory(s), shred: { phase: 'idle', report: null } }));
+    setState((s) => ({ screen: 'shredder', history: pushHistory(s), shred: { phase: 'idle', report: null, removed: 0 } }));
   },
 
   openSettings(): void {
@@ -432,6 +438,18 @@ export const actions = {
     await scan([folderSource(path)]);
   },
 
+  /** Asks the platform for a folder and adds it as a source (null = cancelled). */
+  async pickAndAddFolder(): Promise<void> {
+    let path: string | null = null;
+    try {
+      path = await api.pickFolder();
+    } catch (err) {
+      actions.setNotice(`could not open the folder picker: ${String(err)}`);
+      return;
+    }
+    if (path) await actions.addFolder(path);
+  },
+
   removeFolder(path: string): void {
     setState((s) => ({
       settings: { ...s.settings, folders: s.settings.folders.filter((f) => f !== path) },
@@ -452,17 +470,17 @@ export const actions = {
   },
 
   beginShred(): void {
-    setState({ shred: { phase: 'feeding', report: null } });
+    setState({ shred: { phase: 'feeding', report: null, removed: 0 } });
   },
 
   /** The feed animation finished: only now do files move. */
   async shredFed(): Promise<void> {
     const rejects = selectRejects(state);
     if (rejects.length === 0) {
-      setState({ shred: { phase: 'done', report: { trashed: [], failed: [] } } });
+      setState({ shred: { phase: 'done', report: { trashed: [], failed: [] }, removed: 0 } });
       return;
     }
-    setState({ shred: { phase: 'trashing', report: null } });
+    setState({ shred: { phase: 'trashing', report: null, removed: 0 } });
     try {
       const report = await api.trashPhotos(
         rejects.map((p) => p.id),
@@ -470,7 +488,7 @@ export const actions = {
       );
       actions.finishShred(report);
     } catch (err) {
-      setState({ shred: { phase: 'failed', report: { trashed: [], failed: [] } } });
+      setState({ shred: { phase: 'failed', report: { trashed: [], failed: [] }, removed: 0 } });
       actions.setNotice(`could not move files: ${String(err)}`);
     }
   },
@@ -492,7 +510,7 @@ export const actions = {
       return {
         photos: gonePaths.size === 0 ? s.photos : s.photos.filter((p) => !gonePaths.has(p.path)),
         decisions,
-        shred: { phase: report.failed.length > 0 ? 'failed' : 'done', report },
+        shred: { phase: report.failed.length > 0 ? 'failed' : 'done', report, removed: gonePaths.size },
         lastShred: report.trashed.length > 0 ? { items: report.trashed, volumeIds: [...volumeIds] } : s.lastShred,
       };
     });
@@ -511,6 +529,7 @@ export const actions = {
     }
     const sources = state.sources.filter((src) => last.volumeIds.includes(src.volumeId));
     await scan(sources, true);
+    setState({ shred: { phase: 'restored', report: null, removed: 0 } });
   },
 
   setVolumes(volumes: Volume[]): void {

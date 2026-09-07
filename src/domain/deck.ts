@@ -3,7 +3,7 @@
 // sits. Decisions are keyed by photo path, so every helper takes the photo
 // index to resolve a stack's ids. Pure; memoised by the store.
 
-import type { DecisionMap, Photo, Stack } from '../api/types';
+import type { Decision, DecisionMap, Photo, Stack } from '../api/types';
 import type { RectRot } from '../tokens';
 import { DECK, PRINT } from '../tokens';
 
@@ -15,6 +15,8 @@ export type StackStatus = 'untouched' | 'partial' | 'done';
 export type StackState = {
   status: StackStatus;
   decided: number;
+  kept: number;
+  removed: number;
   total: number;
   /** The first undecided photo, or the last photo once the stack is done. */
   top: Photo | null;
@@ -38,15 +40,19 @@ export function deckQueue(stack: Stack, byId: PhotoIndex, decisions: DecisionMap
 
 export function stackState(stack: Stack, byId: PhotoIndex, decisions: DecisionMap): StackState {
   const photos = stackPhotos(stack, byId);
-  let decided = 0;
+  let kept = 0;
+  let removed = 0;
   let top: Photo | null = null;
   for (const p of photos) {
-    if (decisions[p.path] !== undefined) decided += 1;
+    const d = decisions[p.path]?.d;
+    if (d === 'keep') kept += 1;
+    else if (d === 'remove') removed += 1;
     else if (!top) top = p;
   }
+  const decided = kept + removed;
   const total = photos.length;
   const status: StackStatus = decided === 0 ? 'untouched' : decided >= total ? 'done' : 'partial';
-  return { status, decided, total, top: top ?? photos[photos.length - 1] ?? null };
+  return { status, decided, kept, removed, total, top: top ?? photos[photos.length - 1] ?? null };
 }
 
 export function stackStatus(stack: Stack, byId: PhotoIndex, decisions: DecisionMap): StackStatus {
@@ -86,4 +92,17 @@ export function cardFitRect(aspect: number | null, border: number = PRINT.border
     h,
     rot: 0,
   };
+}
+
+/**
+ * What a released swipe means: the projected travel (position + velocity ×
+ * GESTURE.projectMs) or the release velocity alone can commit; right keeps,
+ * left removes; anything else returns the card. vx is px/ms.
+ */
+export function swipeDecision(projectedDx: number, vx: number): Decision | null {
+  const byTravel = Math.abs(projectedDx) >= DECK.commitDx;
+  const byVelocity = Math.abs(vx) >= DECK.commitVx;
+  if (!byTravel && !byVelocity) return null;
+  const direction = byVelocity && Math.sign(vx) !== 0 ? Math.sign(vx) : Math.sign(projectedDx);
+  return direction > 0 ? 'keep' : direction < 0 ? 'remove' : null;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DecisionMap } from '../api/types';
 import { DECK, PRINT } from '../tokens';
-import { cardFitRect, deckQueue, stackProgress, stackState, stackStatus } from './deck';
+import { cardFitRect, deckQueue, stackProgress, stackState, stackStatus, swipeDecision } from './deck';
 import { buildStacks } from './stacks';
 import { photo } from './fixtures';
 
@@ -36,6 +36,11 @@ describe('stackStatus', () => {
     expect(stackProgress(stack, byId, decide('a'))).toBeCloseTo(1 / 3);
   });
 
+  it('counts keeps and removes separately', () => {
+    const mixed: DecisionMap = { '/vol/a.JPG': { d: 'keep', at: 1 }, '/vol/b.JPG': { d: 'remove', at: 2 } };
+    expect(stackState(stack, byId, mixed)).toMatchObject({ kept: 1, removed: 1, decided: 2, total: 3 });
+  });
+
   it('exposes the first undecided photo as top, or the last photo once done', () => {
     expect(stackState(stack, byId, decide('a')).top?.id).toBe('b');
     expect(stackState(stack, byId, decide('a', 'b', 'c')).top?.id).toBe('c');
@@ -61,5 +66,16 @@ describe('cardFitRect', () => {
 
   it('assumes 3:2 for RAW-only photos with no aspect yet', () => {
     expect(cardFitRect(null)).toEqual(cardFitRect(1.5));
+  });
+});
+
+describe('swipeDecision', () => {
+  it('commits by projected travel or by velocity, in the direction of the throw', () => {
+    expect(swipeDecision(DECK.commitDx, 0)).toBe('keep');
+    expect(swipeDecision(-DECK.commitDx, 0)).toBe('remove');
+    expect(swipeDecision(DECK.commitDx - 1, 0)).toBeNull();
+    expect(swipeDecision(10, DECK.commitVx)).toBe('keep');
+    expect(swipeDecision(10, -DECK.commitVx)).toBe('remove');
+    expect(swipeDecision(0, 0)).toBeNull();
   });
 });
