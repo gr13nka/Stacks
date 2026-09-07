@@ -1,0 +1,89 @@
+/* styles.css — bundled font, reset, ground, phone frame, grain. Values here
+   mirror tokens.ts (COLOR.*, FRAME.*, GRAIN.opacity, FONT.*, TYPE.label): a
+   plain .css file cannot import a .ts module, so keep them in sync by hand
+   against that single source of truth. */
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #dce3de; /* COLOR.ground */
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace; /* FONT.family */
+  font-size: 15px; /* TYPE.label.size */
+  line-height: 22px; /* TYPE.label.lineHeight */
+  font-weight: 400; /* FONT.weight */
+  letter-spacing: 0; /* FONT.letterSpacing */
+  color: #22302b; /* COLOR.ink */
+}
+
+.phone {
+  position: relative;
+  width: 390px; /* FRAME.w */
+  height: 844px; /* FRAME.h */
+  overflow: hidden;
+  background: #dce3de; /* COLOR.ground */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  text-transform: lowercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05; /* GRAIN.opacity */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+button,
+input,
+textarea {
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+button {
+  cursor: default;
+}
