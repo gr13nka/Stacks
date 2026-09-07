@@ -1,0 +1,21 @@
+[package]
+name = "make-fixtures"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Deterministic DCIM fixture card generator for Stacks (JPEG + RAW twins with EXIF/GPS)"
+
+# Standalone package on purpose: it must never share a build graph or lockfile
+# with src-tauri, so it compiles in seconds and cannot conflict with the app.
+[workspace]
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+little_exif = "0.6"
+filetime = "0.2"
+# Only for mktime(3): capture times are wall-clock, and the mtime of the
+# EXIF-less files must read back as that wall-clock time on this machine.
+libc = "0.2"
+
+[dev-dependencies]
+kamadak-exif = "0.6"

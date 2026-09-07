@@ -4,3 +4,4 @@ src-tauri/target/
 src-tauri/gen/schemas/
 fixtures/
 .DS_Store
+tools/make-fixtures/target/
