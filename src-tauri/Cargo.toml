@@ -30,19 +30,12 @@ reverse_geocoder = "4.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 thiserror = "2"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSURL", "NSFileManager", "NSNotification", "NSString", "NSArray", "NSDictionary", "NSError", "NSValue", "NSEnumerator", "NSOperation", "NSObject"] }
+objc2-foundation = { version = "0.3", features = ["NSURL", "NSFileManager", "NSNotification", "NSString", "NSArray", "NSDictionary", "NSError", "NSValue", "NSEnumerator", "NSOperation", "NSObject", "NSGeometry"] }
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSWindow", "NSResponder", "NSApplication"] }
 objc2-core-foundation = "0.3"
 objc2-core-graphics = "0.3"
 objc2-image-io = "0.3"
 block2 = "0.6"
-# Fixture generator only (feature `fixtures`; see src/bin/make_fixtures.rs).
-image = { version = "0.25", optional = true, default-features = false, features = ["jpeg"] }
-little_exif = { version = "0.6", optional = true }
-filetime = { version = "0.2", optional = true }
-
-[features]
-fixtures = ["dep:image", "dep:little_exif", "dep:filetime"]
 
 [dev-dependencies]
 tempfile = "3"
