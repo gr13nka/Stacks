@@ -87,3 +87,22 @@ textarea {
 button {
   cursor: default;
 }
+
+/* Native scrollers (calendar, places): the phone frame disables touch-action,
+   so each scroller re-enables vertical panning and hides its scrollbar. */
+.scroller {
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.scroller::-webkit-scrollbar {
+  display: none;
+}
+
+img {
+  -webkit-user-drag: none;
+}

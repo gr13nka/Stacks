@@ -1,0 +1,52 @@
+import { describe, expect, it } from 'vitest';
+import { SOMEWHERE_ID, clusterPlaces, haversineKm } from './places';
+import { buildStacks } from './stacks';
+import { photo } from './fixtures';
+
+const LISBON = { lat: 38.7223, lon: -9.1393 };
+const PORTO = { lat: 41.1579, lon: -8.6291 };
+
+describe('clusterPlaces', () => {
+  it('measures Lisbon–Porto at roughly 274 km', () => {
+    expect(haversineKm(LISBON, PORTO)).toBeGreaterThan(270);
+    expect(haversineKm(LISBON, PORTO)).toBeLessThan(280);
+  });
+
+  it('forms two clusters at 25 km and a trailing somewhere place', () => {
+    const photos = [
+      photo('l1', '2024-10-28T09:00:00', { gps: LISBON }),
+      photo('l2', '2024-10-28T09:01:00', { gps: { lat: LISBON.lat + 0.02, lon: LISBON.lon - 0.02 } }),
+      photo('l3', '2024-11-03T12:00:00', { gps: { lat: LISBON.lat - 0.05, lon: LISBON.lon + 0.01 } }),
+      photo('p1', '2024-10-31T10:00:00', { gps: PORTO }),
+      photo('p2', '2024-10-31T10:01:00', { gps: { lat: PORTO.lat + 0.01, lon: PORTO.lon } }),
+      photo('n1', '2024-11-05T08:30:00', { volumeId: 'local' }),
+      photo('n2', '2024-11-05T18:00:00', { volumeId: 'local' }),
+    ];
+    const places = clusterPlaces(photos, buildStacks(photos, 3), 25);
+    expect(places).toHaveLength(3);
+    // most recent GPS stack first (Lisbon, 3 Nov), then Porto, then somewhere last
+    expect(places[0].stackIds).toEqual(['card:l3', 'card:l1']);
+    expect(places[0].photoIds).toEqual(['l3', 'l1', 'l2']);
+    expect(places[0].id.startsWith('geo:38.')).toBe(true);
+    expect(places[1].stackIds).toEqual(['card:p1']);
+    expect(places[2].id).toBe(SOMEWHERE_ID);
+    expect(places[2].centroid).toBeNull();
+    expect(places[2].stackIds).toEqual(['local:n2', 'local:n1']);
+  });
+
+  it('a stack with mixed GPS and no-GPS photos goes by its GPS photos', () => {
+    const photos = [
+      photo('a', '2024-10-28T09:00:00', { gps: LISBON }),
+      photo('b', '2024-10-28T09:01:00'),
+    ];
+    const places = clusterPlaces(photos, buildStacks(photos, 3), 25);
+    expect(places).toHaveLength(1);
+    expect(places[0].centroid).toEqual(LISBON);
+    expect(places[0].photoIds).toEqual(['a', 'b']);
+  });
+
+  it('a large radius merges everything into one place', () => {
+    const photos = [photo('l', '2024-10-28T09:00:00', { gps: LISBON }), photo('p', '2024-10-31T10:00:00', { gps: PORTO })];
+    expect(clusterPlaces(photos, buildStacks(photos, 3), 300)).toHaveLength(1);
+  });
+});

@@ -53,8 +53,8 @@ export type Month = {
 export type PlaceLabel = { name: string; admin1: string; country: string; distanceKm: number };
 
 export type Place = {
-  id: string;
-  centroid: { lat: number; lon: number };
+  id: string;              // 'geo:<lat>,<lon>' (centroid rounded to 0.01°) or 'somewhere'
+  centroid: { lat: number; lon: number } | null; // null for the GPS-less "somewhere" place
   stackIds: string[];
   photoIds: string[];
   label: PlaceLabel | null;

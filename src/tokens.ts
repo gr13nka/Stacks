@@ -37,6 +37,7 @@ export const TYPE = {
   month: { size: 22, lineHeight: 28 },
   day: { size: 14, lineHeight: 18 },
   stamp: { size: 15, lineHeight: 18, weight: 500, letterSpacing: '0.04em' },
+  badge: { size: 9, lineHeight: 14 },
 } as const;
 
 export const SHADOW = {
@@ -52,8 +53,10 @@ export const GRAIN = { opacity: 0.05 } as const;
 
 export const PRINT = {
   border: { cell: 3, card: 8, reject: 3 }, // white paper border per print size
-  rawBadge: { h: 14, pad: 4 },
-  tape: { w: 0.9, h: 18, rot: -28 },        // reject tape: width as a fraction of the print
+  rawBadge: { h: 14, pad: 4 },             // pad = inset from the image corner
+  tape: { w: 0.9, h: 18, rot: -28, opacity: 0.55 }, // reject tape: width as a fraction of the print
+  stampInset: { card: 14, cell: 3 },       // date stamp inset from the image corner
+  stampScale: { card: 1, cell: 0.55 },     // the cell stamp is the card stamp scaled down
 } as const;
 
 // Press-and-hold "pick up" state shared by every physical object.
@@ -103,10 +106,27 @@ export const GESTURE = {
   throwDamping: 0.7,   // release velocity carried into the spring
 } as const;
 
-// Top icon bar: calendar, places, rejects, settings at x 236 / 272 / 308 / 344.
-export const TOPBAR = { h: 56, iconY: 17, icon: 22, gap: 14, right: 24 } as const;
+// Chrome (overlay hint, mode-swap lists) enters from this many px below its rest.
+export const CHROME = { rise: 16 } as const;
 
-// Calendar grid: 4 columns, one 75×86 cell per day, prints seated inside.
+// Top icon bar: calendar, places, rejects, settings at x 236 / 272 / 308 / 344.
+export const TOPBAR = { h: 56, iconY: 17, icon: 22, gap: 14, right: 24, target: 36, slots: 4 } as const;
+
+/** Glyph rect of top-bar slot i (0 = calendar … 3 = settings), right-aligned. */
+export function topbarIconRect(i: number): Rect {
+  const x = FRAME.w - TOPBAR.right - TOPBAR.icon - (TOPBAR.slots - 1 - i) * (TOPBAR.icon + TOPBAR.gap);
+  return { x, y: TOPBAR.iconY, w: TOPBAR.icon, h: TOPBAR.icon };
+}
+
+/** The 36×36 pointer target centred on a glyph rect. */
+export function topbarTargetRect(i: number): Rect {
+  const g = topbarIconRect(i);
+  const pad = (TOPBAR.target - TOPBAR.icon) / 2;
+  return { x: g.x - pad, y: g.y - pad, w: TOPBAR.target, h: TOPBAR.target };
+}
+
+// The 4-column grid both list screens share: one 75×86 cell per day (calendar)
+// or per stack (places), a 58×58 print seated inside, a day number above it.
 export const CAL = {
   cols: 4,
   marginX: 24,
@@ -116,13 +136,20 @@ export const CAL = {
   headerH: 48,
   padBottom: 20,
   print: { w: 58, h: 58, border: 3 },
+  printInset: { x: 8, y: 22 },       // print's top-left inside its cell
+  dayNumber: { x: 2, y: 0 },         // day number's top-left inside its cell
+  hairline: { gap: 3, h: 2 },        // progress hairline below the print
   tilt: [-7, 5, -4, 8, -6, 3, 7, -5],
-  fan: { dx: 7, dy: -5, rot: 9 },   // offset of each extra stack on a multi-session day
+  fan: { dx: 7, dy: -5, rot: 9 },    // offset of each extra stack on a multi-session day
+  header: { captionY: 14, monthY: 10 },
   scrollerY: 56,                     // the scroller's top edge in frame coords
+  scrollerH: 788,                    // FRAME.h − TOPBAR.h
+  windowScreens: 1.5,                // blocks further than this many screens away render empty
+  z: { seatedBase: 10, opening: 90000 },
 } as const;
 
-/** Cell i in month-block-local coords. i = daysInMonth − day: the last day sits at i=0 (top-left), day 1 last. */
-export function dayCellRect(i: number): Rect {
+/** Cell i of a grid block, in block-local coords: 4 per row, left to right, top to bottom. */
+export function gridCellRect(i: number): Rect {
   return {
     x: CAL.marginX + (i % CAL.cols) * (CAL.cell.w + CAL.gutterX),
     y: CAL.headerH + Math.floor(i / CAL.cols) * (CAL.cell.h + CAL.rowGap),
@@ -131,10 +158,20 @@ export function dayCellRect(i: number): Rect {
   };
 }
 
-/** Height of a month block with `days` days; pure arithmetic so scroll offsets never measure the DOM. */
-export function monthBlockHeight(days: number): number {
-  const rows = Math.ceil(days / CAL.cols);
+/** Height of a grid block holding `cells` cells; pure arithmetic so scroll offsets never measure the DOM. */
+export function gridBlockHeight(cells: number): number {
+  const rows = Math.max(1, Math.ceil(cells / CAL.cols));
   return CAL.headerH + rows * CAL.cell.h + (rows - 1) * CAL.rowGap + CAL.padBottom;
+}
+
+/** Calendar cell i in month-block-local coords. i = daysInMonth − day: the last day sits at i=0 (top-left), day 1 last. */
+export function dayCellRect(i: number): Rect {
+  return gridCellRect(i);
+}
+
+/** Height of a month block with `days` days. */
+export function monthBlockHeight(days: number): number {
+  return gridBlockHeight(days);
 }
 
 export const DECK = {
@@ -181,8 +218,9 @@ export const SETTINGS = { rowY0: 96, rowH: 52, labelX: 24, valueRight: 24 } as c
 // Back affordance: the tappable band at the bottom of every overlay and its hint line.
 export const BACK = { y: 764, h: 80, hintY: 800 } as const;
 
-// Stacking of the screen overlays inside the frame.
-export const LAYER = { main: 0, deck: 10, rejects: 20, shredder: 30, settings: 40, flight: 100 } as const;
+// Stacking of the screen overlays inside the frame. The icon bar sits above
+// every screen but below prints in flight.
+export const LAYER = { main: 0, deck: 10, rejects: 20, shredder: 30, settings: 40, iconBar: 50, flight: 100 } as const;
 
 /** Rises from 0 at the ends to 1 in the middle: the shade / lift envelope. */
 export function hump(t: number): number {

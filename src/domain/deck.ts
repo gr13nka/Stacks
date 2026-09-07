@@ -1,0 +1,89 @@
+// deck.ts — what the deck shows for a stack: the queue of photos still
+// undecided (in capture order), the stack's progress, and where the top card
+// sits. Decisions are keyed by photo path, so every helper takes the photo
+// index to resolve a stack's ids. Pure; memoised by the store.
+
+import type { DecisionMap, Photo, Stack } from '../api/types';
+import type { RectRot } from '../tokens';
+import { DECK, PRINT } from '../tokens';
+
+export type PhotoIndex = ReadonlyMap<string, Photo>;
+
+export type StackStatus = 'untouched' | 'partial' | 'done';
+
+/** Everything a list cell needs to know about a stack, computed in one pass. */
+export type StackState = {
+  status: StackStatus;
+  decided: number;
+  total: number;
+  /** The first undecided photo, or the last photo once the stack is done. */
+  top: Photo | null;
+};
+
+export const DEFAULT_ASPECT = 1.5;
+
+export function stackPhotos(stack: Stack, byId: PhotoIndex): Photo[] {
+  const out: Photo[] = [];
+  for (const id of stack.photoIds) {
+    const p = byId.get(id);
+    if (p) out.push(p);
+  }
+  return out;
+}
+
+/** Undecided photos of the stack in capture order — the deck's card pile. */
+export function deckQueue(stack: Stack, byId: PhotoIndex, decisions: DecisionMap): Photo[] {
+  return stackPhotos(stack, byId).filter((p) => decisions[p.path] === undefined);
+}
+
+export function stackState(stack: Stack, byId: PhotoIndex, decisions: DecisionMap): StackState {
+  const photos = stackPhotos(stack, byId);
+  let decided = 0;
+  let top: Photo | null = null;
+  for (const p of photos) {
+    if (decisions[p.path] !== undefined) decided += 1;
+    else if (!top) top = p;
+  }
+  const total = photos.length;
+  const status: StackStatus = decided === 0 ? 'untouched' : decided >= total ? 'done' : 'partial';
+  return { status, decided, total, top: top ?? photos[photos.length - 1] ?? null };
+}
+
+export function stackStatus(stack: Stack, byId: PhotoIndex, decisions: DecisionMap): StackStatus {
+  return stackState(stack, byId, decisions).status;
+}
+
+/** Fraction of the stack decided, 0..1. */
+export function stackProgress(stack: Stack, byId: PhotoIndex, decisions: DecisionMap): number {
+  const { decided, total } = stackState(stack, byId, decisions);
+  return total === 0 ? 0 : decided / total;
+}
+
+/**
+ * The top card's rect: a paper slab whose image area has `aspect` (w/h),
+ * fitted inside DECK.box and centred. RAW-only photos have no aspect until
+ * their thumb loads; they get DEFAULT_ASPECT.
+ */
+export function cardFitRect(aspect: number | null, border: number = PRINT.border.card): RectRot {
+  const a = aspect && aspect > 0 ? aspect : DEFAULT_ASPECT;
+  const innerW = DECK.box.w - 2 * border;
+  const innerH = DECK.box.h - 2 * border;
+  let w: number;
+  let h: number;
+  if (a >= innerW / innerH) {
+    w = innerW;
+    h = innerW / a;
+  } else {
+    h = innerH;
+    w = innerH * a;
+  }
+  w += 2 * border;
+  h += 2 * border;
+  return {
+    x: DECK.box.x + (DECK.box.w - w) / 2,
+    y: DECK.box.y + (DECK.box.h - h) / 2,
+    w,
+    h,
+    rot: 0,
+  };
+}

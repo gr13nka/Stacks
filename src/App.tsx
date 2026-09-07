@@ -1,22 +1,97 @@
-// App.tsx — placeholder frame so the scaffold renders; the frontend agent
-// replaces this with the real App (frame scale, IconBar, screens).
-import { COLOR, FRAME, TYPE } from './tokens';
+// App.tsx — the phone frame and the screen stack. The main screen (calendar
+// or places, cross-faded by mode) is always mounted as the desk; deck,
+// rejects, shredder and settings are AnimatePresence overlays keyed by
+// screen, each doing its own hero FLIP. The icon bar floats above them all.
+
+import { AnimatePresence, motion } from 'framer-motion';
+import type { ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { BACK, CHROME, FRAME, LAYER, MOTION } from './tokens';
+import { setFrameElement } from './lib/frame';
+import { spring } from './motion/springs';
+import { actions, useStore } from './store/store';
+import type { Screen } from './store/types';
+import { IconBar } from './components/IconBar';
+import { Caption } from './components/Caption';
+import { CalendarScreen } from './screens/CalendarScreen';
+import { PlacesScreen } from './screens/PlacesScreen';
+import { DeckScreen } from './screens/DeckScreen';
+import { RejectsScreen } from './screens/RejectsScreen';
+import { ShredderScreen } from './screens/ShredderScreen';
+import { SettingsScreen } from './screens/SettingsScreen';
+
+/** The frame always fits the window on both axes (the window aspect is locked, so this is ~1 in Tauri). */
+function useFrameScale(): number {
+  const fit = () => Math.min(window.innerWidth / FRAME.w, window.innerHeight / FRAME.h);
+  const [scale, setScale] = useState(fit);
+  useEffect(() => {
+    const onResize = () => setScale(fit());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return scale;
+}
+
+/** A list screen's cross-fade: the entering list rises 16px while both fade. */
+function ModeLayer({ children }: { children: ReactNode }) {
+  return (
+    <motion.div
+      style={{ position: 'absolute', inset: 0, zIndex: LAYER.main }}
+      initial={{ opacity: 0, y: CHROME.rise }}
+      animate={{ opacity: 1, y: 0, transition: { opacity: spring(MOTION.modeSwap), y: spring(MOTION.chrome) } }}
+      exit={{ opacity: 0, transition: spring(MOTION.modeSwap) }}
+    >
+      {children}
+    </motion.div>
+  );
+}
 
 export function App() {
+  const scale = useFrameScale();
+  const phoneRef = useRef<HTMLDivElement | null>(null);
+  const screen = useStore((s) => s.screen);
+  const history = useStore((s) => s.history);
+  const mode = useStore((s) => s.mode);
+  const notice = useStore((s) => s.notice);
+
+  // A screen stays mounted while it is current or beneath another overlay.
+  const mounted = (name: Screen) => screen === name || history.includes(name);
+
+  useEffect(() => {
+    setFrameElement(phoneRef.current);
+    return () => setFrameElement(null);
+  }, []);
+
   return (
-    <div
-      className="phone"
-      style={{
-        width: FRAME.w,
-        height: FRAME.h,
-        display: 'grid',
-        placeItems: 'center',
-        color: COLOR.muted,
-        fontSize: TYPE.label.size,
-        lineHeight: `${TYPE.label.lineHeight}px`,
-      }}
-    >
-      stacks
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div ref={phoneRef} className="phone" style={{ transform: `scale(${scale})` }}>
+        <div className="grain" />
+        <AnimatePresence initial={false}>
+          {mode === 'calendar' ? (
+            <ModeLayer key="calendar">
+              <CalendarScreen />
+            </ModeLayer>
+          ) : (
+            <ModeLayer key="places">
+              <PlacesScreen />
+            </ModeLayer>
+          )}
+        </AnimatePresence>
+        {notice && screen === 'main' && (
+          <Caption
+            style={{ position: 'absolute', left: 0, top: BACK.hintY, width: FRAME.w, textAlign: 'center', zIndex: LAYER.main + 1 }}
+          >
+            {notice}
+          </Caption>
+        )}
+        <AnimatePresence onExitComplete={actions.exitComplete}>
+          {mounted('deck') && <DeckScreen key="deck" />}
+          {mounted('rejects') && <RejectsScreen key="rejects" />}
+          {mounted('shredder') && <ShredderScreen key="shredder" />}
+          {mounted('settings') && <SettingsScreen key="settings" />}
+        </AnimatePresence>
+        <IconBar />
+      </div>
     </div>
   );
 }
