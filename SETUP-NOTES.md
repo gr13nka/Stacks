@@ -49,9 +49,9 @@ Rust (`src-tauri/Cargo.lock`, 512 packages):
 | objc2-core-graphics | 0.3.2 |
 | objc2-image-io | 0.3.2 |
 | block2 | 0.6.2 |
-| image (optional, `fixtures`) | 0.25.10 (jpeg only) |
-| little_exif (optional, `fixtures`) | 0.6.23 |
-| filetime (optional, `fixtures`) | 0.2.29 |
+| image (tools/make-fixtures only) | 0.25.10 (jpeg only) |
+| little_exif (tools/make-fixtures only) | 0.6.23 |
+| filetime (tools/make-fixtures only) | 0.2.29 |
 | tempfile (dev) | 3.27.0 |
 
 Every crate version and feature name from plan section 7 resolved unchanged. No feature
@@ -103,8 +103,8 @@ Symbols the plan relies on were confirmed present in the locked objc2 crates:
 |---|---|
 | `npm run build` (`tsc --noEmit && vite build`) | PASS — 32 modules, `dist/` incl. `fonts/` |
 | `npx vitest run` | PASS — 2 tests in `src/domain/smoke.test.ts` |
-| `cargo build --manifest-path src-tauri/Cargo.toml` | BUILD_PLAIN_RESULT |
-| `cargo build --manifest-path src-tauri/Cargo.toml --features fixtures` | BUILD_FIXTURES_RESULT |
+| `cargo build --manifest-path src-tauri/Cargo.toml` | PASS (Phase 1A, 0 warnings; `cargo test` 31 passed) |
+| `cargo build --manifest-path tools/make-fixtures/Cargo.toml` | fixture generator crate (Phase 1C) |
 
 ## Things the next agents must know
 
@@ -113,8 +113,8 @@ Symbols the plan relies on were confirmed present in the locked objc2 crates:
 - `npm audit` reports 5 advisories in transitive dev dependencies (vite 5 / esbuild line);
   do not `npm audit fix --force` (it would move to Vite 8).
 - Frontend in a plain browser: `VITE_STACKS_MOCK=1 npm run dev` (mock API); `import.meta.env.VITE_STACKS_MOCK` is typed in `src/vite-env.d.ts`.
-- The `fixtures` npm script expects the fixtures agent to add the `[[bin]] make-fixtures`
-  block to `src-tauri/Cargo.toml`; `[features] fixtures` and the optional deps are already there.
+- The fixture generator is the separate crate `tools/make-fixtures` (npm script `fixtures`);
+  `src-tauri/Cargo.toml` has no `fixtures` feature, `[[bin]]` or optional deps any more.
 - The CSP in `tauri.conf.json` is exactly the plan's string; Tauri appends its own IPC
   `connect-src` entries. Vite's dev HMR websocket relies on `'self'` covering `ws:`; verify
   in Phase 3 and add `connect-src ws://localhost:1420` if the console reports a violation.

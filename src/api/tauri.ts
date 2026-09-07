@@ -1,47 +1,105 @@
-// tauri.ts — StacksApi over the Rust commands. Stub: the Phase-2 A2 agent
-// replaces every method with invoke()/Channel/listen()/convertFileSrc and
-// swaps `storage` for a tauri-plugin-store adapter.
+// tauri.ts — StacksApi over the Rust commands in src-tauri/src/lib.rs. Besides
+// mock.ts this is the only module that imports @tauri-apps/*; everything the
+// UI knows about the platform arrives through the StacksApi interface.
+import { Channel, convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-dialog';
+import { LazyStore } from '@tauri-apps/plugin-store';
 import type { StacksApi } from './api';
-import { localStorageAdapter } from '../store/storage';
+import type { KeyValueStorage } from '../store/storage';
+import type {
+  Environment,
+  PlaceLabel,
+  RestoreReport,
+  ScanEvent,
+  ScanSummary,
+  Source,
+  TrashedFile,
+  TrashReport,
+  Volume,
+} from './types';
 
-const notWired = () => new Error('tauri api not wired yet');
+/** Emitted by the Rust volume watcher with the fresh list on mount/unmount. */
+const VOLUMES_CHANGED = 'volumes-changed';
+
+/** Rust commands reject with a bare string; the store expects an Error. */
+async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(cmd, args);
+  } catch (e) {
+    if (e instanceof Error) throw e;
+    throw new Error(typeof e === 'string' ? e : JSON.stringify(e));
+  }
+}
+
+// One JSON file in app_data_dir. `set` writes through so a decision made just
+// before a crash or eject survives; the store's own autosave would debounce it.
+const store = new LazyStore('stacks.json');
+
+const storeStorage: KeyValueStorage = {
+  async get(key) {
+    const value = await store.get<unknown>(key);
+    return typeof value === 'string' ? value : null;
+  },
+  async set(key, value) {
+    await store.set(key, value);
+    await store.save();
+  },
+};
 
 export const tauriApi: StacksApi = {
   async environment() {
-    throw notWired();
+    const env = await call<Environment>('environment');
+    return { ...env, userAgent: navigator.userAgent };
   },
-  async listVolumes() {
-    throw notWired();
+
+  listVolumes: () => call<Volume[]>('list_volumes'),
+
+  // listen() resolves its unlisten asynchronously; unsubscribing before that
+  // must still detach, and events must not leak through in the meantime.
+  onVolumesChanged(cb) {
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    listen<Volume[]>(VOLUMES_CHANGED, (event) => {
+      if (active) cb(event.payload);
+    })
+      .then((fn) => {
+        if (active) unlisten = fn;
+        else fn();
+      })
+      .catch(() => {
+        // the event system is unavailable (capability missing); nothing to detach
+      });
+    return () => {
+      active = false;
+      unlisten?.();
+      unlisten = null;
+    };
   },
-  onVolumesChanged() {
-    throw notWired();
+
+  defaultSources: () => call<Source[]>('default_sources'),
+
+  scanCatalog(sources, onEvent) {
+    const channel = new Channel<ScanEvent>(onEvent);
+    return call<ScanSummary>('scan_catalog', { sources, onEvent: channel });
   },
-  async defaultSources() {
-    throw notWired();
-  },
-  async scanCatalog() {
-    throw notWired();
-  },
-  thumbUrl() {
-    throw notWired();
-  },
-  originalUrl() {
-    throw notWired();
-  },
-  async prefetchThumbs() {
-    throw notWired();
-  },
-  async labelPlaces() {
-    throw notWired();
-  },
-  async trashPhotos() {
-    throw notWired();
-  },
-  async restoreTrashed() {
-    throw notWired();
-  },
+
+  thumbUrl: (photo, size) => `thumb://localhost/${photo.id}/${size}`,
+
+  originalUrl: (photo) => convertFileSrc(photo.path),
+
+  prefetchThumbs: (ids, size) => call<void>('prefetch_thumbs', { ids, size }),
+
+  labelPlaces: (points) => call<(PlaceLabel | null)[]>('label_places', { points }),
+
+  trashPhotos: (ids, includeRaw) => call<TrashReport>('trash_photos', { ids, includeRaw }),
+
+  restoreTrashed: (items: TrashedFile[]) => call<RestoreReport>('restore_trashed', { items }),
+
   async pickFolder() {
-    throw notWired();
+    const picked = await open({ directory: true, multiple: false });
+    return typeof picked === 'string' ? picked : null;
   },
-  storage: localStorageAdapter,
+
+  storage: storeStorage,
 };
