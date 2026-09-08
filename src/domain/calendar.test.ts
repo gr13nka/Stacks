@@ -9,14 +9,19 @@ describe('calendar geometry', () => {
     expect(dayCellIndex(31, 31)).toBe(0);
     expect(dayCellIndex(1, 31)).toBe(30);
     expect(dayCellRect(0)).toEqual({ x: CAL.marginX, y: CAL.headerH, w: CAL.cell.w, h: CAL.cell.h });
-    expect(dayCellRect(4).y).toBe(CAL.headerH + CAL.cell.h + CAL.rowGap);
-    expect(dayCellRect(5).x).toBe(CAL.marginX + CAL.cell.w + CAL.gutterX);
+    expect(dayCellRect(1).x).toBe(CAL.marginX + CAL.cell.w + CAL.gutterX);
+    expect(dayCellRect(CAL.cols).y).toBe(CAL.headerH + CAL.cell.h + CAL.rowGap);
+    expect(dayCellRect(CAL.cols).x).toBe(CAL.marginX);
   });
 
-  it('sizes 31 days as 8 rows and 28 days as 7', () => {
+  it('sizes a month block by the rows its days need', () => {
     const row = CAL.cell.h + CAL.rowGap;
-    expect(monthBlockHeight(31)).toBe(CAL.headerH + 8 * row - CAL.rowGap + CAL.padBottom);
-    expect(monthBlockHeight(28)).toBe(CAL.headerH + 7 * row - CAL.rowGap + CAL.padBottom);
+    const block = (days: number) =>
+      CAL.headerH + Math.ceil(days / CAL.cols) * row - CAL.rowGap + CAL.padBottom;
+    expect(monthBlockHeight(31)).toBe(block(31));
+    expect(monthBlockHeight(28)).toBe(block(28));
+    // A month that exactly fills its last row is not given an empty extra one.
+    expect(monthBlockHeight(CAL.cols)).toBe(CAL.headerH + row - CAL.rowGap + CAL.padBottom);
   });
 
   it('accumulates month tops without measuring anything', () => {

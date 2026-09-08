@@ -25,21 +25,27 @@ describe('groupRejectsByDay', () => {
 });
 
 describe('layoutRejects', () => {
-  it('lays each group out in three columns under its caption', () => {
+  it('lays each group out in REJECTS.cols columns under its caption', () => {
     const groups = groupRejectsByDay([photos[2], photos[3], photos[4], photos[5], photos[0]], stacks);
     const layout = layoutRejects(groups);
-    expect(layout.captions).toEqual([
-      { day: '2024-11-03', y: 0 },
-      { day: '2024-10-31', y: REJECTS.captionH + 2 * REJECTS.cell.h + REJECTS.gutter + REJECTS.groupGap },
-    ]);
-    expect(layout.cells.get('c')).toEqual({ x: REJECTS.marginX, y: REJECTS.captionH, w: REJECTS.cell.w, h: REJECTS.cell.h });
-    expect(layout.cells.get('e')?.x).toBe(REJECTS.marginX + 2 * (REJECTS.cell.w + REJECTS.gutter));
-    expect(layout.cells.get('f')).toEqual({
-      x: REJECTS.marginX,
-      y: REJECTS.captionH + REJECTS.cell.h + REJECTS.gutter,
+    // The first group holds c, d, e, f; how many rows that is depends on REJECTS.cols.
+    const rows = Math.ceil(4 / REJECTS.cols);
+    const at = (i: number) => ({
+      x: REJECTS.marginX + (i % REJECTS.cols) * (REJECTS.cell.w + REJECTS.gutter),
+      y: REJECTS.captionH + Math.floor(i / REJECTS.cols) * (REJECTS.cell.h + REJECTS.gutter),
       w: REJECTS.cell.w,
       h: REJECTS.cell.h,
     });
+    expect(layout.captions).toEqual([
+      { day: '2024-11-03', y: 0 },
+      {
+        day: '2024-10-31',
+        y: REJECTS.captionH + rows * REJECTS.cell.h + (rows - 1) * REJECTS.gutter + REJECTS.groupGap,
+      },
+    ]);
+    expect(layout.cells.get('c')).toEqual(at(0));
+    expect(layout.cells.get('e')).toEqual(at(2));
+    expect(layout.cells.get('f')).toEqual(at(3));
     expect(layout.height).toBe(layout.captions[1].y + REJECTS.captionH + REJECTS.cell.h + REJECTS.groupGap);
   });
 
@@ -48,7 +54,18 @@ describe('layoutRejects', () => {
   });
 
   it('converts a cell to the print rect in frame coords for a scroll offset', () => {
-    const cell = { x: 24, y: 100, w: 106, h: 106 };
-    expect(cellPrintRect(cell, 40)).toEqual({ x: 33, y: REJECTS.gridY + 100 + 9 - 40, w: 88, h: 88, rot: 0 });
+    const cell = { x: REJECTS.marginX, y: 100, w: REJECTS.cell.w, h: REJECTS.cell.h };
+    const inset = (REJECTS.cell.w - REJECTS.print.w) / 2;
+    const seated = cellPrintRect(cell, 0);
+    // The print is centred in its cell and offset by the grid's top edge.
+    expect(seated).toEqual({
+      x: REJECTS.marginX + inset,
+      y: REJECTS.gridY + 100 + (REJECTS.cell.h - REJECTS.print.h) / 2,
+      w: REJECTS.print.w,
+      h: REJECTS.print.h,
+      rot: 0,
+    });
+    // Scrolling moves it up by exactly the scroll offset, and nothing else.
+    expect(cellPrintRect(cell, 40)).toEqual({ ...seated, y: seated.y - 40 });
   });
 });

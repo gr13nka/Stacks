@@ -23,10 +23,10 @@ import type {
   TrashReport,
   Volume,
 } from '../api/types';
-import { STORAGE_KEY } from '../tokens';
-import type { RectRot } from '../tokens';
+import { STORAGE_KEY, TOPBAR_SLOTS, topbarTargetRect } from '../tokens';
+import type { Destination, RectRot } from '../tokens';
 import { monthsOf } from '../domain/calendar';
-import { deckQueue, stackState } from '../domain/deck';
+import { deckQueue, lastDecided, stackState } from '../domain/deck';
 import type { PhotoIndex, StackState } from '../domain/deck';
 import { SOMEWHERE_ID, clusterPlaces } from '../domain/places';
 import { groupRejectsByDay } from '../domain/rejects';
@@ -379,6 +379,21 @@ export const actions = {
     );
   },
 
+  /** One of the four icon-bar destinations, from the bar or from its number key.
+   *  Rejects and settings toggle: asking for the screen you are already on goes back. */
+  showDestination(to: Destination): void {
+    if (to === 'calendar' || to === 'places') {
+      actions.showMain(to);
+      return;
+    }
+    if (state.screen === to) {
+      goBack();
+      return;
+    }
+    if (to === 'rejects') actions.openRejects({ ...topbarTargetRect(TOPBAR_SLOTS.indexOf(to)), rot: 0 });
+    else actions.openSettings();
+  },
+
   openStack(stackId: string, origin: RectRot): void {
     setState({ screen: 'deck', openStackId: stackId, heroOrigin: origin, history: [] });
     prefetchQueue(stackId);
@@ -401,11 +416,21 @@ export const actions = {
     });
   },
 
+  /** Put the open stack's most recent decision back on the pile (the deck's undo). */
+  undoLastDecision(): void {
+    const stack = selectStackById(state, state.openStackId);
+    if (!stack) return;
+    const photo = lastDecided(stack, selectPhotosById(state), state.decisions);
+    if (photo) actions.undecide(photo.id);
+  },
+
   openRejects(origin: RectRot): void {
     setState((s) => ({ screen: 'rejects', heroOrigin: origin, history: pushHistory(s) }));
   },
 
+  /** Guarded here, not at the button: the keyboard asks for the shredder blind. */
   openShredder(): void {
+    if (selectRejects(state).length === 0) return;
     setState((s) => ({ screen: 'shredder', history: pushHistory(s), shred: { phase: 'idle', report: null, removed: 0 } }));
   },
 
@@ -469,7 +494,12 @@ export const actions = {
     });
   },
 
+  /** Start the feed. Guarded here rather than at the button: the keyboard can
+   *  ask for a shred too, and the phase machine is the store's to protect. */
   beginShred(): void {
+    const phase = state.shred.phase;
+    if (phase !== 'idle' && phase !== 'failed') return;
+    if (selectRejects(state).length === 0) return;
     setState({ shred: { phase: 'feeding', report: null, removed: 0 } });
   },
 

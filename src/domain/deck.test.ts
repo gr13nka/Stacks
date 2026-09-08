@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { DecisionMap } from '../api/types';
 import { DECK, PRINT } from '../tokens';
-import { cardFitRect, deckQueue, stackProgress, stackState, stackStatus, swipeDecision } from './deck';
+import {
+  cardFitRect,
+  deckQueue,
+  lastDecided,
+  stackProgress,
+  stackState,
+  stackStatus,
+  swipeDecision,
+} from './deck';
 import { buildStacks } from './stacks';
 import { photo } from './fixtures';
 
@@ -25,6 +33,33 @@ describe('deckQueue', () => {
   it('ignores ids that are no longer in the catalog', () => {
     const partial = new Map([['b', photos[1]]]);
     expect(deckQueue(stack, partial, {}).map((p) => p.id)).toEqual(['b']);
+  });
+});
+
+describe('lastDecided', () => {
+  const at = (...pairs: [string, number][]): DecisionMap =>
+    Object.fromEntries(pairs.map(([id, t]) => [`/vol/${id}.JPG`, { d: 'remove' as const, at: t }]));
+
+  it('is null until something has been decided', () => {
+    expect(lastDecided(stack, byId, {})).toBeNull();
+  });
+
+  it('finds the only decision', () => {
+    expect(lastDecided(stack, byId, at(['b', 5]))?.id).toBe('b');
+  });
+
+  it('finds the newest decision regardless of capture order', () => {
+    expect(lastDecided(stack, byId, at(['c', 1], ['a', 9], ['b', 4]))?.id).toBe('a');
+  });
+
+  it('breaks a tie towards the later photo in capture order', () => {
+    expect(lastDecided(stack, byId, at(['a', 7], ['c', 7]))?.id).toBe('c');
+  });
+
+  it('ignores decisions on photos outside the stack', () => {
+    const other = photo('z', '2024-12-24T10:00:00');
+    const index = new Map([...byId, [other.id, other]]);
+    expect(lastDecided(stack, index, at(['b', 2], ['z', 99]))?.id).toBe('b');
   });
 });
 

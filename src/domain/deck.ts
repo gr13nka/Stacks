@@ -38,6 +38,21 @@ export function deckQueue(stack: Stack, byId: PhotoIndex, decisions: DecisionMap
   return stackPhotos(stack, byId).filter((p) => decisions[p.path] === undefined);
 }
 
+/** The stack's most recently decided photo — what an undo puts back on the pile. */
+export function lastDecided(stack: Stack, byId: PhotoIndex, decisions: DecisionMap): Photo | null {
+  let latest: Photo | null = null;
+  let at = -Infinity;
+  for (const p of stackPhotos(stack, byId)) {
+    const decision = decisions[p.path];
+    // Ties keep the later photo in capture order, which is the one just swiped.
+    if (decision !== undefined && decision.at >= at) {
+      latest = p;
+      at = decision.at;
+    }
+  }
+  return latest;
+}
+
 export function stackState(stack: Stack, byId: PhotoIndex, decisions: DecisionMap): StackState {
   const photos = stackPhotos(stack, byId);
   let kept = 0;

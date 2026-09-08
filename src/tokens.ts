@@ -1,18 +1,28 @@
 // tokens.ts — every colour, size, rect, spring and gesture constant in the app.
 // Pure data plus a few pure geometry helpers. No DOM, no React. All rects are
-// in "frame" coordinates (the 390×844 phone frame, origin top-left) unless a
-// helper says otherwise. Angles are degrees, lengths are px, times are ms.
+// in "frame" coordinates (the 1280×800 landscape frame, origin top-left)
+// unless a helper says otherwise. Angles are degrees, lengths are px, times
+// are ms.
+//
+// The frame is a fixed design size that App scales to fit the window, so every
+// rect here stays a constant and no layout ever measures the DOM. Widths that
+// have to add up exactly are noted where they do.
 
 export type Rect = { x: number; y: number; w: number; h: number };
 export type RectRot = Rect & { rot: number };
 export type Spring = { stiffness: number; damping: number; mass: number };
 
-export const FRAME = { w: 390, h: 844 } as const;
+export const FRAME = { w: 1280, h: 800 } as const;
+
+// The window is free to be any shape; the frame scales to fit and lies centred on
+// the desk, inset by this margin, with SHADOW.lifted under its rounded corners.
+export const DESK = { margin: 24, radius: 20 } as const;
 
 export const STORAGE_KEY = 'stacks/v1';
 
 export const COLOR = {
-  ground: '#DCE3DE',   // pale mint-grey desk
+  ground: '#DCE3DE',   // pale mint-grey surface inside the frame
+  desk: '#C7D0CA',     // a step deeper: the desk the frame lies on outside it
   paper: '#FBFBF7',    // print borders, badges, buttons
   ink: '#22302B',      // active text
   muted: '#8B9791',    // inactive / secondary text
@@ -110,7 +120,13 @@ export const GESTURE = {
 export const CHROME = { rise: 16 } as const;
 
 // Top icon bar: calendar, places, rejects, settings at x 236 / 272 / 308 / 344.
-export const TOPBAR = { h: 56, iconY: 17, icon: 22, gap: 14, right: 24, target: 36, slots: 4 } as const;
+export const TOPBAR = { h: 56, iconY: 17, icon: 22, gap: 18, right: 48, target: 36, slots: 4 } as const;
+
+// The four places the icon bar can reach, in bar order — which is also the
+// order of the slot rects below, so a destination's hero always flies from its
+// own glyph whether it was tapped or reached by its number key.
+export const TOPBAR_SLOTS = ['calendar', 'places', 'rejects', 'settings'] as const;
+export type Destination = (typeof TOPBAR_SLOTS)[number];
 
 /** Glyph rect of top-bar slot i (0 = calendar … 3 = settings), right-aligned. */
 export function topbarIconRect(i: number): Rect {
@@ -125,30 +141,32 @@ export function topbarTargetRect(i: number): Rect {
   return { x: g.x - pad, y: g.y - pad, w: TOPBAR.target, h: TOPBAR.target };
 }
 
-// The 4-column grid both list screens share: one 75×86 cell per day (calendar)
-// or per stack (places), a 58×58 print seated inside, a day number above it.
+// The 10-column grid both list screens share: one 104×112 cell per day
+// (calendar) or per stack (places), an 80×80 print seated inside, a day number
+// above it. A whole month is four rows, so most of a year is one glance.
+// The row adds up exactly: 10·104 + 9·16 + 2·48 = 1280 = FRAME.w.
 export const CAL = {
-  cols: 4,
-  marginX: 24,
-  gutterX: 14,
-  cell: { w: 75, h: 86 },
-  rowGap: 10,
+  cols: 10,
+  marginX: 48,
+  gutterX: 16,
+  cell: { w: 104, h: 112 },
+  rowGap: 12,
   headerH: 48,
-  padBottom: 20,
-  print: { w: 58, h: 58, border: 3 },
-  printInset: { x: 8, y: 22 },       // print's top-left inside its cell
+  padBottom: 24,
+  print: { w: 80, h: 80, border: 3 },
+  printInset: { x: 12, y: 26 },      // print's top-left inside its cell
   dayNumber: { x: 2, y: 0 },         // day number's top-left inside its cell
-  hairline: { gap: 3, h: 2 },        // progress hairline below the print
+  hairline: { gap: 4, h: 2 },        // progress hairline below the print
   tilt: [-7, 5, -4, 8, -6, 3, 7, -5],
-  fan: { dx: 7, dy: -5, rot: 9 },    // offset of each extra stack on a multi-session day
+  fan: { dx: 9, dy: -7, rot: 9 },    // offset of each extra stack on a multi-session day
   header: { captionY: 14, monthY: 10 },
   scrollerY: 56,                     // the scroller's top edge in frame coords
-  scrollerH: 788,                    // FRAME.h − TOPBAR.h
+  scrollerH: 744,                    // FRAME.h − TOPBAR.h
   windowScreens: 1.5,                // blocks further than this many screens away render empty
   z: { seatedBase: 10, opening: 90000 },
 } as const;
 
-/** Cell i of a grid block, in block-local coords: 4 per row, left to right, top to bottom. */
+/** Cell i of a grid block, in block-local coords: CAL.cols per row, left to right, top to bottom. */
 export function gridCellRect(i: number): Rect {
   return {
     x: CAL.marginX + (i % CAL.cols) * (CAL.cell.w + CAL.gutterX),
@@ -174,82 +192,91 @@ export function monthBlockHeight(days: number): number {
   return gridBlockHeight(days);
 }
 
+// The card is the point of the whole app, so on a laptop it takes the room.
+// The box is shaped for 3:2 — 882×588 of image inside an 8px border — so the
+// commonest photo fills it exactly and everything else is letterboxed inside.
+// Centred: x = (1280 − 898) / 2.
 export const DECK = {
-  box: { x: 25, y: 116, w: 340, h: 452 },   // the top card fits its aspect inside this, centred
-  counter: { x: 24, y: 72 },
+  box: { x: 191, y: 96, w: 898, h: 604 },   // the top card fits its aspect inside this, centred
+  counter: { x: 48, y: 72 },
   behind: [
-    { dy: 12, rot: -3, scale: 0.965 },
-    { dy: 22, rot: 2.5, scale: 0.93 },
-    { dy: 30, rot: -1.5, scale: 0.9 },
+    { dy: 16, rot: -3, scale: 0.965 },
+    { dy: 28, rot: 2.5, scale: 0.93 },
+    { dy: 38, rot: -1.5, scale: 0.9 },
   ],
-  edge: { x: -46, y: 590, w: 96, h: 128, rot: -14 }, // the reject edge, half off-screen
-  commitDx: 120,       // projected travel that commits a swipe
+  edge: { x: -46, y: 560, w: 96, h: 128, rot: -14 }, // the reject edge, half off-screen
+  commitDx: 180,       // projected travel that commits a swipe
   commitVx: 0.9,       // px/ms release velocity that commits a swipe
-  tiltPerPx: 1 / 18,   // card rotation per px of drag
-  flyX: 620,           // where a kept card flies to
+  tiltPerPx: 1 / 24,   // card rotation per px of drag
+  flyX: 1400,          // where a kept card flies to (clear of a 900-wide box)
   flyRot: 22,
-  stampInset: 14,      // date stamp inset from the image corner
+  stampInset: 20,      // date stamp inset from the image corner
   dragY: 0.3,          // vertical drag is damped to this fraction
-  hint: { dx: 40, fade: 40 },   // out tape / keep tick fade in from |dx| = dx over `fade` px
-  tick: { size: 56, inset: 22 }, // the blue keep tick, top-right inside the card
+  hint: { dx: 60, fade: 60 },   // out tape / keep tick fade in from |dx| = dx over `fade` px
+  tick: { size: 88, inset: 32 }, // the blue keep tick, top-right inside the card
   pileSize: 4,         // cards mounted at once (top + DECK.behind)
   edgeJolt: 1.08,      // reject edge scale bump when a card lands on it
-  edgeCount: { x: 62, y: 604 }, // the reject count next to the edge
+  edgeCount: { x: 62, y: 574 }, // the reject count next to the edge
 } as const;
 
+// 8·134 + 7·16 + 2·48 = 1280 = FRAME.w.
 export const REJECTS = {
-  cols: 3,
-  marginX: 24,
+  cols: 8,
+  marginX: 48,
   gridY: 140,
-  cell: { w: 106, h: 106 },
-  gutter: 12,
-  print: { w: 88, h: 88 },
-  hero: { x: 24, y: 96, w: 96, h: 128, rot: 0 },
-  button: { y: 760 },
+  cell: { w: 134, h: 134 },
+  gutter: 16,
+  print: { w: 112, h: 112 },
+  hero: { x: 48, y: 96, w: 96, h: 128, rot: 0 },
+  button: { y: 716 },
   captionH: 26,        // the day caption row above each group
-  groupGap: 14,        // space after a group's last row
-  scrollerH: 608,      // gridY .. button.y − 12
-  emptyY: 300,         // "nothing to shred" caption
+  groupGap: 16,        // space after a group's last row
+  scrollerH: 564,      // gridY .. button.y − 12
+  emptyY: 320,         // "nothing to shred" caption
 } as const;
 
+// The pile is centred on the frame (x = (1280 − 240) / 2) above a seam that
+// runs across the middle, with the cavity filling everything below it.
 export const SHREDDER = {
-  pile: { x: 95, y: 150, w: 200, h: 200 },
+  pile: { x: 520, y: 120, w: 240, h: 240 },
   pileTilt: [-4, 3, -2, 5, -3, 2],
-  seam: { y: 420, h: 18 },
+  seam: { y: 400, h: 20 },
   strips: 7,
-  stripFall: 300,      // px a strip falls below the seam before fading out
+  stripFall: 320,      // px a strip falls below the seam before fading out
   feedStagger: 260,    // ms between successive prints entering the seam
   maxFeedMs: 6000,     // a big pile compresses the stagger so the whole feed fits in this
   jolt: 1.12,          // seam scaleY when a print is swallowed
-  button: { y: 760 },
-  print: { w: 200, h: 200, border: 3 }, // prints on the pile (strips are print.w / strips wide)
+  button: { y: 716 },
+  print: { w: 240, h: 240, border: 3 }, // prints on the pile (strips are print.w / strips wide)
   sink: 0.6,           // fraction of the print's height that goes below the seam
   feedScale: 0.92,     // print scale at the end of the feed
   knee: 0.55,          // feed progress at which the seam jolts and the strips appear
-  stripStep: 9,        // each strip trails the previous by this many px
+  stripStep: 11,       // each strip trails the previous by this many px
   stripTilt: 2,        // strips alternate ± this rotation
   flightStagger: 15,   // ms between prints flying in from the reject grid
   maxFlights: 24,      // prints beyond this many just appear on the pile
   pileVisible: 12,     // seated prints drawn at once (the rest wait under the top ones)
-  slotW: 240,          // the lighter seam slot on the cavity
-  statusY: 372,        // status caption above the seam
+  slotW: 420,          // the lighter seam slot on the cavity
+  statusY: 352,        // status caption above the seam
   counterDy: 24,       // countdown caption below the seam slot
   undoMs: 20000,       // undo stays available this long after a shred
   z: { pile: 10, cavity: 500, strips: 510, flight: 600 }, // inside the shredder overlay; chrome is LAYER.chrome
 } as const;
 
+// labelX / valueRight are the settings column's side padding: a full-width row
+// would strand the value 1200px from its label, so the column is 640 centred.
 export const SETTINGS = {
   rowY0: 96,
   rowH: 52,
-  labelX: 24,
-  valueRight: 24,
-  scroller: { y: 56, h: 708 },  // TOPBAR.h .. BACK.y
+  labelX: 320,                  // (FRAME.w − 640) / 2
+  valueRight: 320,
+  scroller: { y: 56, h: 664 },  // TOPBAR.h .. BACK.y
   stepW: 32,                    // width of the − / + buttons
   sectionGap: 16,
 } as const;
 
 // Back affordance: the tappable band at the bottom of every overlay and its hint line.
-export const BACK = { y: 764, h: 80, hintY: 800 } as const;
+export const BACK = { y: 720, h: 80, hintY: 756 } as const;
 
 // Stacking of the screen overlays inside the frame. The icon bar sits above
 // every screen but below prints in flight. `chrome` is local to an overlay:

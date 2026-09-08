@@ -9,7 +9,7 @@ import type { Place } from '../../api/types';
 import { usePointerGesture } from '../../lib/gesture';
 import { actions, selectPlaceName, useStore } from '../../store/store';
 
-const NAME_W = FRAME.w - 2 * CAL.marginX - 110; // leaves room for the "n stacks" caption
+const NAME_W = Math.min(440, FRAME.w - 2 * CAL.marginX - 110); // leaves room for the "n stacks" caption
 
 type PlaceNameProps = { place: Place };
 

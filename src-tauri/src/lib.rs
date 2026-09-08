@@ -109,7 +109,10 @@ pub fn run() {
             let state = AppState::new(paths.app_data_dir()?, paths.app_cache_dir()?);
             app.manage(Arc::new(state));
             if let Some(main) = app.get_webview_window("main") {
-                window::lock_aspect(&main)?;
+                window::fit_to_display(&main)?;
+                // Make the webview first responder, so the keyboard works
+                // before the user has clicked anything.
+                let _ = main.set_focus();
             }
             volumes::watch(app.handle().clone());
             Ok(())

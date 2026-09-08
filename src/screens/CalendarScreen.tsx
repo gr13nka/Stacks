@@ -12,7 +12,7 @@ import { Caption } from '../components/Caption';
 import { actions, selectCaption, selectMonths, useStore } from '../store/store';
 import { MonthBlock } from './calendar/MonthBlock';
 
-const EMPTY_CAPTION_Y = 200;
+const EMPTY_CAPTION_Y = 280;
 
 export function CalendarScreen() {
   const months = useStore(selectMonths);

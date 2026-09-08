@@ -8,7 +8,7 @@ import { Caption } from '../components/Caption';
 import { actions, selectCaption, selectPlaces, useStore } from '../store/store';
 import { PlaceBlock } from './places/PlaceBlock';
 
-const EMPTY_CAPTION_Y = 200;
+const EMPTY_CAPTION_Y = 280;
 
 export function PlacesScreen() {
   const places = useStore(selectPlaces);

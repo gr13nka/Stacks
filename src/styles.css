@@ -1,7 +1,7 @@
-/* styles.css — bundled font, reset, ground, phone frame, grain. Values here
-   mirror tokens.ts (COLOR.*, FRAME.*, GRAIN.opacity, FONT.*, TYPE.label): a
-   plain .css file cannot import a .ts module, so keep them in sync by hand
-   against that single source of truth. */
+/* styles.css — bundled font, reset, desk, phone frame, grain. Values here
+   mirror tokens.ts (COLOR.*, FRAME.*, DESK.*, SHADOW.lifted, GRAIN.opacity,
+   FONT.*, TYPE.label): a plain .css file cannot import a .ts module, so keep
+   them in sync by hand against that single source of truth. */
 
 @font-face {
   font-family: 'JetBrains Mono';
@@ -32,11 +32,8 @@ body {
 }
 
 body {
-  background: #dce3de; /* COLOR.ground */
+  background: #c7d0ca; /* COLOR.desk */
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   min-height: 100vh;
   font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace; /* FONT.family */
   font-size: 15px; /* TYPE.label.size */
@@ -46,11 +43,29 @@ body {
   color: #22302b; /* COLOR.ink */
 }
 
+/* The desk fills the window; the frame lies centred on it, scaled to fit. */
+.desk {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #c7d0ca; /* COLOR.desk */
+}
+
+.desk:focus {
+  outline: none;
+}
+
 .phone {
   position: relative;
-  width: 390px; /* FRAME.w */
-  height: 844px; /* FRAME.h */
+  width: 1280px; /* FRAME.w */
+  height: 800px; /* FRAME.h */
   overflow: hidden;
+  border-radius: 20px; /* DESK.radius */
+  box-shadow: 0 22px 44px rgba(74, 63, 46, 0.24), 0 6px 14px rgba(74, 63, 46, 0.12); /* SHADOW.lifted */
   background: #dce3de; /* COLOR.ground */
   touch-action: none;
   user-select: none;

@@ -1,62 +1,46 @@
 // IconBar.tsx — the top band: window drag region plus the four glyphs
 // (calendar, places, rejects, settings). It sits above every screen so the
-// user can jump between them from anywhere; the active one is in accent and
-// the rejects glyph carries a count when the pile is non-empty.
+// user can jump between them from anywhere, by tap or by number key; the
+// active one is in accent and the rejects glyph carries a count when the pile
+// is non-empty. Where a tap goes is actions.showDestination's business, so the
+// bar and the keyboard cannot drift apart.
 
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { COLOR, FRAME, LAYER, TOPBAR, TYPE, topbarTargetRect } from '../tokens';
+import { COLOR, FRAME, LAYER, TOPBAR, TOPBAR_SLOTS, TYPE, topbarTargetRect } from '../tokens';
+import type { Destination } from '../tokens';
 import { usePointerGesture } from '../lib/gesture';
 import { actions, selectRejectCount, useStore } from '../store/store';
 import { CalendarGlyph, PlacesGlyph, RejectsGlyph, SettingsGlyph } from './Icons';
 
-type Slot = 'calendar' | 'places' | 'rejects' | 'settings';
-
-const SLOTS: { key: Slot; glyph: ReactNode }[] = [
-  { key: 'calendar', glyph: <CalendarGlyph /> },
-  { key: 'places', glyph: <PlacesGlyph /> },
-  { key: 'rejects', glyph: <RejectsGlyph /> },
-  { key: 'settings', glyph: <SettingsGlyph /> },
-];
+const GLYPH: Record<Destination, ReactNode> = {
+  calendar: <CalendarGlyph />,
+  places: <PlacesGlyph />,
+  rejects: <RejectsGlyph />,
+  settings: <SettingsGlyph />,
+};
 
 export function IconBar() {
   const screen = useStore((s) => s.screen);
   const mode = useStore((s) => s.mode);
   const rejectCount = useStore(selectRejectCount);
 
-  const active: Slot = screen === 'rejects' ? 'rejects' : screen === 'settings' ? 'settings' : mode;
-
-  const tap = (slot: Slot, i: number) => {
-    switch (slot) {
-      case 'calendar':
-      case 'places':
-        actions.showMain(slot);
-        break;
-      case 'rejects':
-        if (screen === 'rejects') actions.goBack();
-        else actions.openRejects({ ...topbarTargetRect(i), rot: 0 });
-        break;
-      case 'settings':
-        if (screen === 'settings') actions.goBack();
-        else actions.openSettings();
-        break;
-    }
-  };
+  const active: Destination = screen === 'rejects' ? 'rejects' : screen === 'settings' ? 'settings' : mode;
 
   return (
     <div
       data-tauri-drag-region
       style={{ position: 'absolute', left: 0, top: 0, width: FRAME.w, height: TOPBAR.h, zIndex: LAYER.iconBar }}
     >
-      {SLOTS.map((slot, i) => (
+      {TOPBAR_SLOTS.map((slot, i) => (
         <IconButton
-          key={slot.key}
+          key={slot}
           index={i}
-          active={active === slot.key}
-          count={slot.key === 'rejects' ? rejectCount : 0}
-          onTap={() => tap(slot.key, i)}
+          active={active === slot}
+          count={slot === 'rejects' ? rejectCount : 0}
+          onTap={() => actions.showDestination(slot)}
         >
-          {slot.glyph}
+          {GLYPH[slot]}
         </IconButton>
       ))}
     </div>

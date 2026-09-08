@@ -10,6 +10,7 @@ import { FRAME, LAYER, SHREDDER } from '../tokens';
 import type { RectRot } from '../tokens';
 import { cellPrintRect, layoutRejects } from '../domain/rejects';
 import { feedStagger, isLocked, shredMessage } from '../domain/shred';
+import { setScreenKeys } from '../lib/keys';
 import { Overlay } from '../motion/Overlay';
 import { Caption } from '../components/Caption';
 import { TextButton } from '../components/TextButton';
@@ -69,6 +70,18 @@ export function ShredderScreen() {
     doneCount.current += 1;
     if (doneCount.current >= feedTotal.current) void actions.shredFed();
   };
+
+  // Enter and z do exactly what the two buttons do — including their guards,
+  // which live in this screen's feed state, not in the store.
+  useEffect(() => {
+    setScreenKeys('shredder', {
+      'shred:start': start,
+      'undo:shred': () => {
+        if (undoVisible && lastShred) void actions.undoShred();
+      },
+    });
+    return () => setScreenKeys('shredder', null);
+  });
 
   useEffect(() => {
     if (phase !== 'done') {

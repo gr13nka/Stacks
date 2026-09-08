@@ -125,6 +125,9 @@ export function usePointerGesture(
 
   const onPointerDown = (e: ReactPointerEvent) => {
     if (!e.isPrimary) return;
+    // A right- or middle-click is primary too; only the left button gestures,
+    // or a right-click on an Overlay would read as a tap and navigate back.
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (!optionsRef.current.propagate) e.stopPropagation();
     try {
       (e.target as Element).setPointerCapture(e.pointerId);
