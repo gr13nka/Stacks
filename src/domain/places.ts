@@ -34,6 +34,42 @@ type Cluster = {
   newestMs: number;
 };
 
+/** Where a stack was shot: the mean of its GPS photos and how many there are; null when none has GPS. */
+export function stackCentroid(stack: Stack, byId: ReadonlyMap<string, Photo>): { centroid: LatLon; n: number } | null {
+  let lat = 0;
+  let lon = 0;
+  let n = 0;
+  for (const id of stack.photoIds) {
+    const gps = byId.get(id)?.gps;
+    if (!gps) continue;
+    lat += gps.lat;
+    lon += gps.lon;
+    n += 1;
+  }
+  return n === 0 ? null : { centroid: { lat: lat / n, lon: lon / n }, n };
+}
+
+/**
+ * The best guess of where a stack was: its own centroid, else that of the
+ * stack closest to it in time that has GPS. Ranks same-named cities in the
+ * location picker ("paris" near Lisbon is the French one).
+ */
+export function nearestFix(stack: Stack, stacks: readonly Stack[], byId: ReadonlyMap<string, Photo>): LatLon | null {
+  const own = stackCentroid(stack, byId);
+  if (own) return own.centroid;
+  let best: LatLon | null = null;
+  let bestGap = Infinity;
+  for (const other of stacks) {
+    const gap = Math.max(0, other.startMs - stack.endMs, stack.startMs - other.endMs);
+    if (gap >= bestGap) continue;
+    const fix = stackCentroid(other, byId);
+    if (!fix) continue;
+    best = fix.centroid;
+    bestGap = gap;
+  }
+  return best;
+}
+
 export function clusterPlaces(photos: readonly Photo[], stacks: readonly Stack[], radiusKm: number): Place[] {
   const byId = new Map(photos.map((p) => [p.id, p] as const));
   const clusters: Cluster[] = [];
@@ -41,22 +77,13 @@ export function clusterPlaces(photos: readonly Photo[], stacks: readonly Stack[]
 
   const ordered = stacks.slice().sort((a, b) => b.startMs - a.startMs);
   for (const stack of ordered) {
-    let lat = 0;
-    let lon = 0;
-    let n = 0;
-    for (const id of stack.photoIds) {
-      const gps = byId.get(id)?.gps;
-      if (!gps) continue;
-      lat += gps.lat;
-      lon += gps.lon;
-      n += 1;
-    }
-    const target = n === 0 ? somewhere : findOrCreate(clusters, { lat: lat / n, lon: lon / n }, radiusKm);
-    if (n > 0) {
-      const w = target.weight + n;
+    const fix = stackCentroid(stack, byId);
+    const target = fix ? findOrCreate(clusters, fix.centroid, radiusKm) : somewhere;
+    if (fix) {
+      const w = target.weight + fix.n;
       target.centroid = {
-        lat: (target.centroid.lat * target.weight + lat) / w,
-        lon: (target.centroid.lon * target.weight + lon) / w,
+        lat: (target.centroid.lat * target.weight + fix.centroid.lat * fix.n) / w,
+        lon: (target.centroid.lon * target.weight + fix.centroid.lon * fix.n) / w,
       };
       target.weight = w;
     }

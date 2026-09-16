@@ -1,15 +1,15 @@
-// SettingsScreen.tsx — a column of SETTINGS.rowH rows in a native
+// SettingsScreen.tsx — a column of ROW.h rows in a native
 // scroller: the stack gap (− n h +), the raw twin rule, the sources with
 // "remove" for user folders and "add folder", the fixture flag, and the
 // about block. Every control is a TextButton; the Overlay's back gesture
 // handles everything else.
 
-import type { ReactNode } from 'react';
 import type { Source, Volume } from '../api/types';
-import { COLOR, FRAME, LAYER, SETTINGS, TYPE } from '../tokens';
+import { COLOR, FRAME, LAYER, SETTINGS } from '../tokens';
 import { GAP_HOURS } from '../store/types';
 import { Overlay } from '../motion/Overlay';
 import { Caption } from '../components/Caption';
+import { Label, Row, Section, TwoLineRow } from '../components/Rows';
 import { TextButton } from '../components/TextButton';
 import { actions, useStore } from '../store/store';
 
@@ -77,27 +77,6 @@ export function SettingsScreen() {
 
 const stepStyle = { width: SETTINGS.stepW, justifyContent: 'center' } as const;
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div style={{ height: SETTINGS.rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Label>{label}</Label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{children}</div>
-    </div>
-  );
-}
-
-function Label({ children }: { children: ReactNode }) {
-  return (
-    <div style={{ color: COLOR.ink, fontSize: TYPE.label.size, lineHeight: `${TYPE.label.lineHeight}px`, whiteSpace: 'nowrap' }}>
-      {children}
-    </div>
-  );
-}
-
-function Section({ children }: { children: ReactNode }) {
-  return <Caption style={{ marginTop: SETTINGS.sectionGap, height: SETTINGS.rowH / 2, lineHeight: `${SETTINGS.rowH / 2}px` }}>{children}</Caption>;
-}
-
 /** Name from the volume when there is one, else the folder's last path segment. */
 function sourceName(source: Source, volumes: Volume[]): string {
   const volume = volumes.find((v) => v.id === source.volumeId);
@@ -107,14 +86,16 @@ function sourceName(source: Source, volumes: Volume[]): string {
 
 function SourceRow({ source, volumes, userFolder }: { source: Source; volumes: Volume[]; userFolder: boolean }) {
   return (
-    <div style={{ height: SETTINGS.rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <div style={{ minWidth: 0 }}>
-        <Label>
+    <TwoLineRow
+      title={
+        <>
           {sourceName(source, volumes)} <span style={{ color: COLOR.muted }}>· {source.kind}</span>
-        </Label>
-        <Caption style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260, textTransform: 'none' }}>{source.root}</Caption>
-      </div>
+        </>
+      }
+      caption={source.root}
+      keepCase
+    >
       {userFolder && <TextButton label="remove" tone="muted" onTap={() => actions.removeFolder(source.root)} />}
-    </div>
+    </TwoLineRow>
   );
 }

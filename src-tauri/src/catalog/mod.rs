@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 
 use crate::state::{AppState, Entry};
 use crate::volumes::{Source, VolumeKind};
-use meta::{Gps, TakenAtSource};
+use meta::{Gps, PhotoMeta, TakenAtSource};
 
 /// Photos per `Batch` event: large enough to amortise IPC, small enough that
 /// the first prints appear within a second on a card.
@@ -115,15 +115,7 @@ fn forget_volume(state: &AppState, volume_id: &str) {
 }
 
 fn build(pair: &pair::Pair, source: &Source, state: &AppState) -> Option<(Photo, Entry)> {
-    let md = std::fs::metadata(&pair.primary).ok()?;
-    let size = md.len();
-    let mtime = md
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-
+    let (size, mtime) = stat(&pair.primary)?;
     let key = cache::key(&pair.primary, size, mtime);
     let cached = state.meta_cache.lock().ok().and_then(|c| c.get(&key).cloned());
     let meta = match cached {
@@ -137,20 +129,7 @@ fn build(pair: &pair::Pair, source: &Source, state: &AppState) -> Option<(Photo,
         }
     };
 
-    let photo = Photo {
-        id: photo_id(&pair.primary),
-        path: pair.primary.to_string_lossy().into_owned(),
-        raw_path: pair.raw.as_ref().map(|r| r.to_string_lossy().into_owned()),
-        volume_id: source.volume_id.clone(),
-        taken_at: meta.taken_at,
-        taken_at_source: meta.taken_at_source,
-        gps: meta.gps,
-        orientation: meta.orientation,
-        aspect: meta.aspect,
-        camera: meta.camera,
-        size,
-        mtime,
-    };
+    let photo = photo(&pair.primary, pair.raw.as_deref(), &source.volume_id, meta, size, mtime);
     let entry = Entry {
         path: pair.primary.clone(),
         raw: pair.raw.clone(),
@@ -159,6 +138,54 @@ fn build(pair: &pair::Pair, source: &Source, state: &AppState) -> Option<(Photo,
         mtime,
     };
     Some((photo, entry))
+}
+
+/// Re-reads one photo whose file just changed under the catalog (a metadata
+/// edit): EXIF is read fresh even when the cache key still matches, cached
+/// under the file's current key, and the index entry takes the new mtime so
+/// thumbnails key off the edited file. `None` when the id or file is gone.
+pub fn refresh(state: &AppState, id: &str) -> Option<Photo> {
+    let entry = state.entry(id)?;
+    let (size, mtime) = stat(&entry.path)?;
+    let meta = meta::read_meta(&entry.path, mtime);
+    if let Ok(mut c) = state.meta_cache.lock() {
+        c.insert(cache::key(&entry.path, size, mtime), meta.clone());
+    }
+    if let Ok(mut index) = state.index.write() {
+        if let Some(e) = index.get_mut(id) {
+            e.mtime = mtime;
+        }
+    }
+    Some(photo(&entry.path, entry.raw.as_deref(), &entry.volume_id, meta, size, mtime))
+}
+
+/// Size in bytes and modification time in unix milliseconds.
+fn stat(path: &Path) -> Option<(u64, u64)> {
+    let md = std::fs::metadata(path).ok()?;
+    let mtime = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    Some((md.len(), mtime))
+}
+
+fn photo(primary: &Path, raw: Option<&Path>, volume_id: &str, meta: PhotoMeta, size: u64, mtime: u64) -> Photo {
+    Photo {
+        id: photo_id(primary),
+        path: primary.to_string_lossy().into_owned(),
+        raw_path: raw.map(|r| r.to_string_lossy().into_owned()),
+        volume_id: volume_id.to_string(),
+        taken_at: meta.taken_at,
+        taken_at_source: meta.taken_at_source,
+        gps: meta.gps,
+        orientation: meta.orientation,
+        aspect: meta.aspect,
+        camera: meta.camera,
+        size,
+        mtime,
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DecisionMap } from '../api/types';
 import { DECK, PRINT } from '../tokens';
-import { cardFitRect, deckQueue, stackProgress, stackState, stackStatus, swipeDecision } from './deck';
+import { cardFitRect, deckQueue, stackProgress, stackState, stackStatus, swipeDecision, turnedCardScale } from './deck';
 import { buildStacks } from './stacks';
 import { photo } from './fixtures';
 
@@ -66,6 +66,28 @@ describe('cardFitRect', () => {
 
   it('assumes 3:2 for RAW-only photos with no aspect yet', () => {
     expect(cardFitRect(null)).toEqual(cardFitRect(1.5));
+  });
+});
+
+describe('turnedCardScale', () => {
+  it('is 1 when the card is upright or upside down', () => {
+    expect(turnedCardScale(1.5, 0)).toBe(1);
+    expect(turnedCardScale(1.5, 2)).toBe(1);
+  });
+
+  it('makes a turned landscape card cover the portrait rect it is about to get', () => {
+    const laid = cardFitRect(1.5);
+    const turned = cardFitRect(1 / 1.5);
+    const s = turnedCardScale(1.5, 1);
+    expect(laid.h * s).toBeLessThanOrEqual(turned.w + 1e-9);
+    expect(laid.w * s).toBeLessThanOrEqual(turned.h + 1e-9);
+    // the paper border is scaled too, so the fit is within a border's worth, never over
+    expect(Math.max(turned.w - laid.h * s, turned.h - laid.w * s)).toBeLessThan(2 * PRINT.border.card);
+    expect(turnedCardScale(1.5, 3)).toBe(s);
+  });
+
+  it('assumes 3:2 for RAW-only photos', () => {
+    expect(turnedCardScale(null, 1)).toBe(turnedCardScale(1.5, 1));
   });
 });
 

@@ -2,12 +2,13 @@
 // list cell (calendar day or place). It shows the stack's top photo, carries
 // the partial-progress hairline, hides while its stack is open (the deck's
 // hero is standing in for it), and hands its own rect up on tap so the
-// hero can take off from exactly here.
+// hero can take off from exactly here. A long press opens the location
+// picker for the stack, from either list.
 
 import { CAL, COLOR } from '../tokens';
 import type { RectRot } from '../tokens';
 import type { Stack } from '../api/types';
-import { selectStackState, useStore } from '../store/store';
+import { actions, selectStackState, useStore } from '../store/store';
 import { Pickable } from './Pickable';
 import { Print } from './Print';
 
@@ -40,6 +41,7 @@ export function StackPrint({ stack, x, y, rot, z, stamp = false, onOpen }: Stack
         rot={rot}
         hidden={hidden}
         onTap={() => onOpen(stack.id, { x, y, w, h, rot })}
+        onLongPress={() => actions.openLocate(stack.id)}
         style={{ position: 'absolute', left: x, top: y, zIndex: z }}
       >
         <Print photo={photo} w={w} h={h} border={border} size={512} stamp={stamp ? 'cell' : false} />

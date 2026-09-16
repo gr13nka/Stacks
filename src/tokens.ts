@@ -7,7 +7,8 @@ export type Rect = { x: number; y: number; w: number; h: number };
 export type RectRot = Rect & { rot: number };
 export type Spring = { stiffness: number; damping: number; mass: number };
 
-export const FRAME = { w: 390, h: 844 } as const;
+export const DESKTOP = import.meta.env.VITE_STACKS_DESKTOP === '1';
+export const FRAME = DESKTOP ? { w: 1280, h: 720 } as const : { w: 390, h: 844 } as const;
 
 export const STORAGE_KEY = 'stacks/v1';
 
@@ -128,9 +129,11 @@ export function topbarTargetRect(i: number): Rect {
 // The 4-column grid both list screens share: one 75×86 cell per day (calendar)
 // or per stack (places), a 58×58 print seated inside, a day number above it.
 export const CAL = {
-  cols: 4,
-  marginX: 24,
-  gutterX: 14,
+  // Desktop keeps the calendar in a centred 4:3 work area rather than
+  // spreading its cells across the full 16:9 frame.
+  cols: DESKTOP ? 8 : 4,
+  marginX: DESKTOP ? 256 : 24,
+  gutterX: DESKTOP ? 24 : 14,
   cell: { w: 75, h: 86 },
   rowGap: 10,
   headerH: 48,
@@ -143,7 +146,7 @@ export const CAL = {
   fan: { dx: 7, dy: -5, rot: 9 },    // offset of each extra stack on a multi-session day
   header: { captionY: 14, monthY: 10 },
   scrollerY: 56,                     // the scroller's top edge in frame coords
-  scrollerH: 788,                    // FRAME.h − TOPBAR.h
+  scrollerH: FRAME.h - TOPBAR.h,
   windowScreens: 1.5,                // blocks further than this many screens away render empty
   z: { seatedBase: 10, opening: 90000 },
 } as const;
@@ -175,14 +178,14 @@ export function monthBlockHeight(days: number): number {
 }
 
 export const DECK = {
-  box: { x: 25, y: 116, w: 340, h: 452 },   // the top card fits its aspect inside this, centred
-  counter: { x: 24, y: 72 },
+  box: DESKTOP ? { x: 390, y: 90, w: 500, h: 500 } : { x: 25, y: 116, w: 340, h: 452 },
+  counter: { x: DESKTOP ? 40 : 24, y: 72 },
   behind: [
     { dy: 12, rot: -3, scale: 0.965 },
     { dy: 22, rot: 2.5, scale: 0.93 },
     { dy: 30, rot: -1.5, scale: 0.9 },
   ],
-  edge: { x: -46, y: 590, w: 96, h: 128, rot: -14 }, // the reject edge, half off-screen
+  edge: { x: -46, y: DESKTOP ? 470 : 590, w: 96, h: 128, rot: -14 },
   commitDx: 120,       // projected travel that commits a swipe
   commitVx: 0.9,       // px/ms release velocity that commits a swipe
   tiltPerPx: 1 / 18,   // card rotation per px of drag
@@ -194,34 +197,36 @@ export const DECK = {
   tick: { size: 56, inset: 22 }, // the blue keep tick, top-right inside the card
   pileSize: 4,         // cards mounted at once (top + DECK.behind)
   edgeJolt: 1.08,      // reject edge scale bump when a card lands on it
-  edgeCount: { x: 62, y: 604 }, // the reject count next to the edge
+  edgeCount: { x: 62, y: DESKTOP ? 484 : 604 },
+  decisionMs: 150,     // short, serialized feedback before the next card advances
+  turnMs: 180,         // a tap's quarter turn of the top card
 } as const;
 
 export const REJECTS = {
-  cols: 3,
-  marginX: 24,
-  gridY: 140,
+  cols: DESKTOP ? 10 : 3,
+  marginX: DESKTOP ? 50 : 24,
+  gridY: DESKTOP ? 100 : 140,
   cell: { w: 106, h: 106 },
   gutter: 12,
   print: { w: 88, h: 88 },
-  hero: { x: 24, y: 96, w: 96, h: 128, rot: 0 },
-  button: { y: 760 },
+  hero: { x: DESKTOP ? 50 : 24, y: 96, w: 96, h: 128, rot: 0 },
+  button: { y: DESKTOP ? 650 : 760 },
   captionH: 26,        // the day caption row above each group
   groupGap: 14,        // space after a group's last row
-  scrollerH: 608,      // gridY .. button.y − 12
+  scrollerH: DESKTOP ? 538 : 608,
   emptyY: 300,         // "nothing to shred" caption
 } as const;
 
 export const SHREDDER = {
-  pile: { x: 95, y: 150, w: 200, h: 200 },
+  pile: { x: DESKTOP ? 540 : 95, y: DESKTOP ? 100 : 150, w: 200, h: 200 },
   pileTilt: [-4, 3, -2, 5, -3, 2],
-  seam: { y: 420, h: 18 },
+  seam: { y: DESKTOP ? 360 : 420, h: 18 },
   strips: 7,
   stripFall: 300,      // px a strip falls below the seam before fading out
   feedStagger: 260,    // ms between successive prints entering the seam
   maxFeedMs: 6000,     // a big pile compresses the stagger so the whole feed fits in this
   jolt: 1.12,          // seam scaleY when a print is swallowed
-  button: { y: 760 },
+  button: { y: DESKTOP ? 650 : 760 },
   print: { w: 200, h: 200, border: 3 }, // prints on the pile (strips are print.w / strips wide)
   sink: 0.6,           // fraction of the print's height that goes below the seam
   feedScale: 0.92,     // print scale at the end of the feed
@@ -232,29 +237,43 @@ export const SHREDDER = {
   maxFlights: 24,      // prints beyond this many just appear on the pile
   pileVisible: 12,     // seated prints drawn at once (the rest wait under the top ones)
   slotW: 240,          // the lighter seam slot on the cavity
-  statusY: 372,        // status caption above the seam
+  statusY: DESKTOP ? 312 : 372,
   counterDy: 24,       // countdown caption below the seam slot
   undoMs: 20000,       // undo stays available this long after a shred
   z: { pile: 10, cavity: 500, strips: 510, flight: 600 }, // inside the shredder overlay; chrome is LAYER.chrome
 } as const;
 
+// One list row (components/Rows) and the gap above a section header, shared by settings and the location picker.
+export const ROW = { h: 52, sectionGap: 16 } as const;
+
 export const SETTINGS = {
   rowY0: 96,
-  rowH: 52,
   labelX: 24,
   valueRight: 24,
-  scroller: { y: 56, h: 708 },  // TOPBAR.h .. BACK.y
+  scroller: { y: 56, h: DESKTOP ? 584 : 708 },
   stepW: 32,                    // width of the − / + buttons
-  sectionGap: 16,
 } as const;
 
 // Back affordance: the tappable band at the bottom of every overlay and its hint line.
-export const BACK = { y: 764, h: 80, hintY: 800 } as const;
+export const BACK = DESKTOP ? { y: 640, h: 80, hintY: 676 } as const : { y: 764, h: 80, hintY: 800 } as const;
+
+// The location picker: a title, a caption, the search field, then a scroller
+// of place and city rows that ends where the back band begins. Desktop keeps
+// it in a centred column like the settings rows.
+export const LOCATE = {
+  x: DESKTOP ? 400 : 24,
+  w: DESKTOP ? 480 : FRAME.w - 48,
+  titleY: 64,
+  captionY: 96,
+  field: { y: 124, h: 44 },
+  scroller: { y: 176, h: BACK.y - 176 },
+  debounceMs: 120,     // typing pause before the city search runs
+} as const;
 
 // Stacking of the screen overlays inside the frame. The icon bar sits above
 // every screen but below prints in flight. `chrome` is local to an overlay:
 // its chrome slot always sits above the overlay's own content.
-export const LAYER = { main: 0, deck: 10, rejects: 20, shredder: 30, settings: 40, iconBar: 50, flight: 100, chrome: 1000 } as const;
+export const LAYER = { main: 0, deck: 10, rejects: 20, shredder: 30, settings: 40, locate: 45, iconBar: 50, flight: 100, chrome: 1000 } as const;
 
 /** Rises from 0 at the ends to 1 in the middle: the shade / lift envelope. */
 export function hump(t: number): number {

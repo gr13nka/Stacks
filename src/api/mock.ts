@@ -5,11 +5,14 @@
 // between 28 Oct and 5 Nov 2024 with a 2 h 50 m gap that joins and a
 // 3 h 10 m gap that splits, two GPS clusters (Lisbon, Porto). Thumbs are
 // SVG data URIs coloured per session and numbered per photo; the trash is
-// an in-memory list so shred / undo can be exercised end to end.
+// an in-memory list so shred / undo can be exercised end to end, and
+// rotatePhoto / locatePhotos edit the in-memory catalog the way the Rust
+// writer edits files (JPEGs only, camera GPS kept).
 
 import type { StacksApi, ThumbSize } from './api';
-import type { Photo, PlaceLabel, Source, TrashedFile, Volume } from './types';
+import type { City, FileFailure, Photo, PlaceLabel, RetagReport, Source, TrashedFile, Volume } from './types';
 import { localStorageAdapter } from '../store/storage';
+import { rotateOrientation } from '../domain/orientation';
 import { haversineKm } from '../domain/places';
 import { HOUR_MS, wallClockToMs } from '../domain/time';
 
@@ -156,8 +159,25 @@ function sessionHue(session: number): number {
   return (session * 47 + 200) % 360;
 }
 
-function svgThumb(entry: Entry, size: ThumbSize): string {
-  const key = `${entry.photo.id}/${size}`;
+/** Clockwise quarter turns from the generated orientation to `photo`'s — the thumb follows the photo, like `?o=` does in tauri.ts. */
+function turnsSinceGenerated(entry: Entry, photo: Photo): number {
+  for (let t = 0; t < 4; t++) if (rotateOrientation(entry.photo.orientation, t) === photo.orientation) return t;
+  return 0;
+}
+
+/** Photos whose GPS was written by locatePhotos (the mock's GPSProcessingMethod = "MANUAL"). */
+const manualGps = new Set<string>();
+
+/** The SVG transform that turns a w×h drawing by t clockwise quarter turns into its new box. */
+function turnTransform(t: number, w: number, h: number): string {
+  if (t === 1) return `translate(${h} 0) rotate(90)`;
+  if (t === 2) return `translate(${w} ${h}) rotate(180)`;
+  if (t === 3) return `translate(0 ${w}) rotate(270)`;
+  return '';
+}
+
+function svgThumb(entry: Entry, size: ThumbSize, turns: number): string {
+  const key = `${entry.photo.id}/${size}/${turns}`;
   const cached = thumbCache.get(key);
   if (cached) return cached;
 
@@ -165,20 +185,47 @@ function svgThumb(entry: Entry, size: ThumbSize): string {
   const short = Math.round(size / 1.5);
   const w = entry.portrait ? short : long;
   const h = entry.portrait ? long : short;
+  const [outW, outH] = turns % 2 === 1 ? [h, w] : [w, h];
   const hue = sessionHue(entry.session);
   const inset = Math.round(size * 0.035);
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${outH}" viewBox="0 0 ${outW} ${outH}">` +
+    `<g transform="${turnTransform(turns, w, h)}">` +
     `<rect width="${w}" height="${h}" fill="hsl(${hue} 34% 52%)"/>` +
     `<rect x="${inset}" y="${inset}" width="${w - 2 * inset}" height="${h - 2 * inset}" fill="hsl(${hue} 40% 62%)"/>` +
     `<circle cx="${w * 0.7}" cy="${h * 0.3}" r="${size * 0.08}" fill="hsl(${(hue + 40) % 360} 60% 80%)"/>` +
-    `<text x="50%" y="56%" font-family="ui-monospace, Menlo, monospace" font-size="${Math.round(size * 0.22)}" fill="rgba(255,255,255,0.92)" text-anchor="middle">${entry.index}</text>` +
-    `<text x="50%" y="${h - inset * 2}" font-family="ui-monospace, Menlo, monospace" font-size="${Math.round(size * 0.05)}" fill="rgba(255,255,255,0.75)" text-anchor="middle">${entry.cam}</text>` +
-    `</svg>`;
+    `<text x="${w / 2}" y="${h * 0.56}" font-family="ui-monospace, Menlo, monospace" font-size="${Math.round(size * 0.22)}" fill="rgba(255,255,255,0.92)" text-anchor="middle">${entry.index}</text>` +
+    `<text x="${w / 2}" y="${h - inset * 2}" font-family="ui-monospace, Menlo, monospace" font-size="${Math.round(size * 0.05)}" fill="rgba(255,255,255,0.75)" text-anchor="middle">${entry.cam}</text>` +
+    `</g></svg>`;
   const url = `data:image/svg+xml,${encodeURIComponent(svg)}`;
   thumbCache.set(key, url);
   return url;
 }
+
+// ---- metadata writes and city search ---------------------------------------------
+
+const isJpeg = (path: string) => /\.jpe?g$/i.test(path);
+
+/** Looks up a photo the way the Rust writer would, or explains why it can't be written. */
+function writable(id: string): Photo | FileFailure {
+  const photo = catalog.get(id);
+  if (!photo) return { id, path: '', reason: 'missing', message: 'not in catalog' };
+  if (!isJpeg(photo.path)) return { id, path: photo.path, reason: 'unsupported', message: 'not a jpeg' };
+  return photo;
+}
+
+const CITIES: City[] = [
+  { name: 'Lisbon', admin1: 'Lisbon', country: 'PT', lat: 38.71667, lon: -9.13333 },
+  { name: 'Sintra', admin1: 'Lisbon', country: 'PT', lat: 38.80097, lon: -9.37826 },
+  { name: 'Cascais', admin1: 'Lisbon', country: 'PT', lat: 38.69979, lon: -9.42293 },
+  { name: 'Porto', admin1: 'Porto', country: 'PT', lat: 41.14961, lon: -8.61099 },
+  { name: 'Coimbra', admin1: 'Coimbra', country: 'PT', lat: 40.20564, lon: -8.41955 },
+  { name: 'Faro', admin1: 'Faro', country: 'PT', lat: 37.01869, lon: -7.92716 },
+  { name: 'Paris', admin1: 'Ile-de-France', country: 'FR', lat: 48.85341, lon: 2.3488 },
+  { name: 'Paris', admin1: 'Texas', country: 'US', lat: 33.66094, lon: -95.55551 },
+];
+
+const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
 
 const BLANK_THUMB =
   'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"/>');
@@ -224,7 +271,7 @@ export const mockApi: StacksApi = {
 
   thumbUrl(photo, size) {
     const entry = entryById.get(photo.id);
-    return entry ? svgThumb(entry, size) : BLANK_THUMB;
+    return entry ? svgThumb(entry, size, turnsSinceGenerated(entry, photo)) : BLANK_THUMB;
   },
 
   originalUrl(photo) {
@@ -244,10 +291,52 @@ export const mockApi: StacksApi = {
     });
   },
 
+  async searchCities(query, near) {
+    await tick(20);
+    const q = fold(query);
+    if (!q) return [];
+    const tier = (name: string) => (name === q ? 0 : name.startsWith(q) ? 1 : name.includes(q) ? 2 : 3);
+    const away = (c: City) => (near ? haversineKm(near, c) : 0);
+    return CITIES.filter((c) => tier(fold(c.name)) < 3).sort(
+      (a, b) => tier(fold(a.name)) - tier(fold(b.name)) || away(a) - away(b),
+    );
+  },
+
+  async rotatePhoto(id, quarterTurns) {
+    await tick(60);
+    const found = writable(id);
+    if (!('volumeId' in found)) return { updated: [], kept: [], failed: [found] };
+    const q = ((quarterTurns % 4) + 4) % 4;
+    const updated: Photo = {
+      ...found,
+      orientation: rotateOrientation(found.orientation, q),
+      aspect: found.aspect && q % 2 === 1 ? 1 / found.aspect : found.aspect,
+    };
+    catalog.set(id, updated);
+    return { updated: [updated], kept: [], failed: [] };
+  },
+
+  async locatePhotos(ids, lat, lon) {
+    await tick(80);
+    const report: RetagReport = { updated: [], kept: [], failed: [] };
+    for (const id of ids) {
+      const found = writable(id);
+      if (!('volumeId' in found)) report.failed.push(found);
+      else if (found.gps && !manualGps.has(id)) report.kept.push(id);
+      else {
+        const updated: Photo = { ...found, gps: { lat, lon } };
+        catalog.set(id, updated);
+        manualGps.add(id);
+        report.updated.push(updated);
+      }
+    }
+    return report;
+  },
+
   async trashPhotos(ids, includeRaw) {
     await tick(200);
     const trashed: TrashedFile[] = [];
-    const failed: { id: string; path: string; reason: 'read-only' | 'missing' | 'other'; message: string }[] = [];
+    const failed: FileFailure[] = [];
     for (const id of ids) {
       const photo = catalog.get(id);
       if (!photo) {

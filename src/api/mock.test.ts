@@ -55,3 +55,40 @@ describe('mock scenario', () => {
     expect(restore.failed).toHaveLength(0);
   });
 });
+
+describe('mock metadata writes', () => {
+  it('turns a jpeg (orientation, aspect and thumb follow) and refuses the raw-only file', async () => {
+    const jpeg = photos.find((p) => p.orientation === 1 && p.aspect === 1.5)!;
+    const before = mockApi.thumbUrl(jpeg, 512);
+    const report = await mockApi.rotatePhoto(jpeg.id, 1);
+    expect(report.updated[0]).toMatchObject({ id: jpeg.id, orientation: 6, aspect: 1 / 1.5 });
+    expect(mockApi.thumbUrl(report.updated[0], 512)).not.toBe(before);
+    expect(mockApi.thumbUrl(jpeg, 512)).toBe(before); // the url follows the photo passed in, like ?o= does
+    const back = await mockApi.rotatePhoto(jpeg.id, 3);
+    expect(back.updated[0]).toMatchObject({ orientation: 1, aspect: 1.5 });
+
+    const raw = photos.find((p) => p.aspect === null)!;
+    const refused = await mockApi.rotatePhoto(raw.id, 1);
+    expect(refused.updated).toHaveLength(0);
+    expect(refused.failed[0].reason).toBe('unsupported');
+  });
+
+  it('fills missing gps, keeps camera gps, and lets a manual location be replaced', async () => {
+    const bare = photos.find((p) => !p.gps && p.path.endsWith('.JPG'))!;
+    const located = photos.find((p) => p.gps)!;
+    const first = await mockApi.locatePhotos([bare.id, located.id], 38.8, -9.38);
+    expect(first.updated.map((p) => p.id)).toEqual([bare.id]);
+    expect(first.updated[0].gps).toEqual({ lat: 38.8, lon: -9.38 });
+    expect(first.kept).toEqual([located.id]);
+    const again = await mockApi.locatePhotos([bare.id], 41.15, -8.61);
+    expect(again.updated[0].gps).toEqual({ lat: 41.15, lon: -8.61 });
+  });
+
+  it('searches cities accent-insensitively, nearest first among equal matches', async () => {
+    const nearLisbon = await mockApi.searchCities('paris', { lat: 38.7, lon: -9.1 });
+    expect(nearLisbon.map((c) => c.country)).toEqual(['FR', 'US']);
+    const nearTexas = await mockApi.searchCities('PARÍS', { lat: 33, lon: -96 });
+    expect(nearTexas[0].country).toBe('US');
+    expect(await mockApi.searchCities('  ', null)).toEqual([]);
+  });
+});

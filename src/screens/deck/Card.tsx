@@ -6,15 +6,22 @@
 // (remove) before the decision is recorded. Positioned inside the deck's
 // hero box at its own fit rect so cards of different aspects all sit
 // centred in DECK.box.
+//
+// A tap turns the top card clockwise. The turn lives on an inner layer with
+// its own motion values (the card's `rotate` already carries pose, tilt and
+// fly-out): it shows the store's pending turns at once, scaled to the rect
+// the turned photo will get, and hands them over to the layout in the same
+// frame the re-read photo (new aspect, new thumb) lands.
 
 import { animate, motion, useMotionValue, useTransform } from 'framer-motion';
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react';
 import type { Decision, Photo } from '../../api/types';
 import { COLOR, DECK, MOTION, PRINT, rectCenter } from '../../tokens';
 import type { RectRot } from '../../tokens';
 import { usePointerGesture } from '../../lib/gesture';
 import { settled, valueSpring } from '../../motion/springs';
-import { cardFitRect, swipeDecision } from '../../domain/deck';
+import { cardFitRect, swipeDecision, turnedCardScale } from '../../domain/deck';
+import { actions, useStore } from '../../store/store';
 import { Print, RejectTape } from '../../components/Print';
 
 export type CardHandle = { commit(d: Decision): void };
@@ -41,6 +48,48 @@ const ENTER_POSE = behindPose(DECK.behind.length);
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
+/** The short ease-out every deliberate card motion (decision, turn) shares. */
+const EASE_OUT: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
+/**
+ * The inner turn layer's values: `turns` quarter turns shown on top of the
+ * photo as its file currently has it, animated toward on every tap (and back
+ * when a write fails). When a write lands, the file has absorbed n of those
+ * turns and the card is re-laid out for its new aspect in the same render:
+ * the current pose is re-expressed in the new layout (n·90° less, scale
+ * divided by the n-turn factor) so nothing visibly moves, then any turns
+ * still pending carry on from there.
+ */
+function useTurn(photo: Photo) {
+  const turns = useStore((s) => s.pendingTurns[photo.id] ?? 0);
+  const turn = useMotionValue(turns * 90);
+  const turnScale = useMotionValue(turnedCardScale(photo.aspect, turns));
+  const prev = useRef({ turns, orientation: photo.orientation, aspect: photo.aspect });
+
+  useLayoutEffect(() => {
+    const before = prev.current;
+    prev.current = { turns, orientation: photo.orientation, aspect: photo.aspect };
+    if (before.turns === turns && before.orientation === photo.orientation) return;
+    const rotate = turns * 90;
+    const scale = turnedCardScale(photo.aspect, turns);
+    if (before.orientation !== photo.orientation) {
+      const n = before.turns - turns;
+      turn.jump(turn.get() - n * 90);
+      turnScale.jump(turnScale.get() / turnedCardScale(before.aspect, n));
+    } else if ((turns - before.turns) % 4 === 0) {
+      // A full circle settled without a write: the card already looks like this.
+      turn.jump(rotate);
+      turnScale.jump(scale);
+    }
+    if (Math.abs(turn.get() - rotate) < 1e-6 && Math.abs(turnScale.get() - scale) < 1e-6) return;
+    const tween = { duration: DECK.turnMs / 1000, ease: EASE_OUT };
+    const controls = [animate(turn, rotate, tween), animate(turnScale, scale, tween)];
+    return () => controls.forEach((c) => c.stop());
+  }, [turns, photo.orientation, photo.aspect, turn, turnScale]);
+
+  return { turn, turnScale };
+}
+
 export const Card = forwardRef<CardHandle, CardProps>(function Card({ photo, depth, anchor, onDecided }, ref) {
   const fit = cardFitRect(photo.aspect);
   const isTop = depth === 0;
@@ -53,6 +102,7 @@ export const Card = forwardRef<CardHandle, CardProps>(function Card({ photo, dep
   const opacity = useMotionValue(isTop ? 1 : 0);
   const flying = useRef(false);
   const mounted = useRef(false);
+  const { turn, turnScale } = useTurn(photo);
 
   const outOpacity = useTransform(x, (v) => clamp01((-v - DECK.hint.dx) / DECK.hint.fade));
   const keepOpacity = useTransform(x, (v) => clamp01((v - DECK.hint.dx) / DECK.hint.fade));
@@ -77,23 +127,25 @@ export const Card = forwardRef<CardHandle, CardProps>(function Card({ photo, dep
   const fly = (d: Decision, vx: number) => {
     if (flying.current) return;
     flying.current = true;
-    const velocity = vx * 1000; // px/ms → px/s, the unit framer-motion springs take
+    // Sorting is intentionally serialized, but the old springs could take
+    // close to a second to report completion. A fixed short tween gives clear
+    // feedback and makes the next card available in a predictable 150 ms.
+    const flight = { duration: DECK.decisionMs / 1000, ease: EASE_OUT };
     let flights: Promise<void>[];
     if (d === 'keep') {
       flights = [
-        settled(animate(x, DECK.flyX, valueSpring(MOTION.cardKeep, velocity))),
-        settled(animate(rotate, DECK.flyRot, valueSpring(MOTION.cardKeep))),
+        settled(animate(x, DECK.flyX, flight)),
+        settled(animate(rotate, DECK.flyRot, flight)),
       ];
     } else {
       // FLIP onto the reject edge: centre to centre, scaled by width, taking its tilt.
       const from = rectCenter(fit);
       const to = rectCenter(DECK.edge);
-      const s = valueSpring(MOTION.cardReject);
       flights = [
-        settled(animate(x, to.x - from.x, valueSpring(MOTION.cardReject, velocity))),
-        settled(animate(y, to.y - from.y, s)),
-        settled(animate(scale, DECK.edge.w / fit.w, s)),
-        settled(animate(rotate, DECK.edge.rot, s)),
+        settled(animate(x, to.x - from.x, flight)),
+        settled(animate(y, to.y - from.y, flight)),
+        settled(animate(scale, DECK.edge.w / fit.w, flight)),
+        settled(animate(rotate, DECK.edge.rot, flight)),
       ];
     }
     void Promise.all(flights).then(() => onDecided(photo, d));
@@ -112,6 +164,10 @@ export const Card = forwardRef<CardHandle, CardProps>(function Card({ photo, dep
 
   const gesture = usePointerGesture(
     {
+      onTap: () => {
+        if (flying.current) return;
+        actions.rotate(photo.id);
+      },
       onDragMove: (g) => {
         if (flying.current) return;
         y.set(g.dy * DECK.dragY);
@@ -151,7 +207,9 @@ export const Card = forwardRef<CardHandle, CardProps>(function Card({ photo, dep
         touchAction: 'none',
       }}
     >
-      <Print photo={photo} w={fit.w} h={fit.h} border={PRINT.border.card} size={1600} stamp="card" />
+      <motion.div style={{ position: 'absolute', inset: 0, rotate: turn, scale: turnScale, transformOrigin: '50% 50%' }}>
+        <Print photo={photo} w={fit.w} h={fit.h} border={PRINT.border.card} size={1600} stamp="card" />
+      </motion.div>
       <motion.div style={{ position: 'absolute', inset: 0, opacity: outOpacity, pointerEvents: 'none' }}>
         <RejectTape w={fit.w} />
       </motion.div>

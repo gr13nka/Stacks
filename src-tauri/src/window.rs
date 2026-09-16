@@ -6,7 +6,8 @@ use objc2_app_kit::NSWindow;
 use objc2_foundation::NSSize;
 use tauri::WebviewWindow;
 
-pub const FRAME: (f64, f64) = (390.0, 844.0);
+pub const MOBILE_FRAME: (f64, f64) = (390.0, 844.0);
+pub const DESKTOP_FRAME: (f64, f64) = (1280.0, 720.0);
 
 /// Must run on the main thread (the setup hook does).
 pub fn lock_aspect(window: &WebviewWindow) -> tauri::Result<()> {
@@ -14,6 +15,11 @@ pub fn lock_aspect(window: &WebviewWindow) -> tauri::Result<()> {
     // SAFETY: Tauri hands us the live NSWindow it owns; we only borrow it for
     // one main-thread call and never retain it.
     let ns_window: &NSWindow = unsafe { &*ptr.cast::<NSWindow>() };
-    ns_window.setContentAspectRatio(NSSize::new(FRAME.0, FRAME.1));
+    let frame = if std::env::var_os("STACKS_DESKTOP").is_some() {
+        DESKTOP_FRAME
+    } else {
+        MOBILE_FRAME
+    };
+    ns_window.setContentAspectRatio(NSSize::new(frame.0, frame.1));
     Ok(())
 }

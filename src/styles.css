@@ -48,8 +48,8 @@ body {
 
 .phone {
   position: relative;
-  width: 390px; /* FRAME.w */
-  height: 844px; /* FRAME.h */
+  width: var(--frame-width, 390px);
+  height: var(--frame-height, 844px);
   overflow: hidden;
   background: #dce3de; /* COLOR.ground */
   touch-action: none;

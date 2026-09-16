@@ -3,8 +3,13 @@
 // async runtime onto a blocking thread and call one module function.
 
 mod catalog;
+mod exif_edit;
+mod failure;
 mod geocode;
+mod retag;
 mod state;
+#[cfg(test)]
+mod testkit;
 mod thumbs;
 mod trash;
 mod volumes;
@@ -18,7 +23,8 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 use catalog::{ScanEvent, ScanSummary};
-use geocode::PlaceLabel;
+use geocode::{City, PlaceLabel};
+use retag::RetagReport;
 use state::AppState;
 use trash::{RestoreReport, TrashReport, TrashedFile};
 use volumes::{Source, Volume};
@@ -79,6 +85,23 @@ async fn label_places(points: Vec<[f64; 2]>) -> Result<Vec<Option<PlaceLabel>>, 
 }
 
 #[tauri::command]
+async fn search_cities(query: String, near: Option<[f64; 2]>) -> Result<Vec<City>, String> {
+    spawn_blocking(move || geocode::search(&query, near, geocode::SEARCH_LIMIT)).await.map_err(join_err)
+}
+
+#[tauri::command]
+async fn rotate_photo(state: State<'_, Shared>, id: String, quarter_turns: i32) -> Result<RetagReport, String> {
+    let state = Arc::clone(state.inner());
+    spawn_blocking(move || retag::rotate(&state, &id, quarter_turns)).await.map_err(join_err)
+}
+
+#[tauri::command]
+async fn locate_photos(state: State<'_, Shared>, ids: Vec<String>, lat: f64, lon: f64) -> Result<RetagReport, String> {
+    let state = Arc::clone(state.inner());
+    spawn_blocking(move || retag::locate(&state, &ids, lat, lon)).await.map_err(join_err)
+}
+
+#[tauri::command]
 async fn trash_photos(state: State<'_, Shared>, ids: Vec<String>, include_raw: bool) -> Result<TrashReport, String> {
     let state = Arc::clone(state.inner());
     spawn_blocking(move || trash::trash_photos(&state, &ids, include_raw)).await.map_err(join_err)
@@ -112,6 +135,7 @@ pub fn run() {
                 window::lock_aspect(&main)?;
             }
             volumes::watch(app.handle().clone());
+            std::thread::spawn(geocode::warm);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -120,6 +144,9 @@ pub fn run() {
             scan_catalog,
             prefetch_thumbs,
             label_places,
+            search_cities,
+            rotate_photo,
+            locate_photos,
             trash_photos,
             restore_trashed,
             environment,

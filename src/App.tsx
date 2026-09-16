@@ -1,12 +1,13 @@
 // App.tsx — the phone frame and the screen stack. The main screen (calendar
 // or places, cross-faded by mode) is always mounted as the desk; deck,
-// rejects, shredder and settings are AnimatePresence overlays keyed by
-// screen, each doing its own hero FLIP. The icon bar floats above them all.
+// rejects, shredder, settings and the location picker are AnimatePresence
+// overlays keyed by screen, each doing its own hero FLIP. The icon bar
+// floats above them all.
 
 import { AnimatePresence, motion } from 'framer-motion';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { BACK, CHROME, FRAME, LAYER, MOTION } from './tokens';
+import { BACK, CHROME, DESKTOP, FRAME, LAYER, MOTION } from './tokens';
 import { setFrameElement } from './lib/frame';
 import { spring } from './motion/springs';
 import { actions, useStore } from './store/store';
@@ -19,8 +20,9 @@ import { DeckScreen } from './screens/DeckScreen';
 import { RejectsScreen } from './screens/RejectsScreen';
 import { ShredderScreen } from './screens/ShredderScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { LocateScreen } from './screens/LocateScreen';
 
-/** The frame always fits the window on both axes (the window aspect is locked, so this is ~1 in Tauri). */
+/** The selected mobile or desktop frame always fits the window on both axes. */
 function useFrameScale(): number {
   const fit = () => Math.min(window.innerWidth / FRAME.w, window.innerHeight / FRAME.h);
   const [scale, setScale] = useState(fit);
@@ -64,7 +66,22 @@ export function App() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div ref={phoneRef} className="phone" style={{ transform: `scale(${scale})` }}>
+      <div
+        ref={phoneRef}
+        className="phone"
+        style={{
+          // WKWebView can rasterize a transformed layer before scaling it,
+          // which makes the desktop UI soft at fractional/fullscreen sizes.
+          // CSS zoom participates in layout and paints at the final scale.
+          ...(DESKTOP ? { zoom: scale } : { transform: `scale(${scale})` }),
+          '--frame-width': `${FRAME.w}px`,
+          '--frame-height': `${FRAME.h}px`,
+        } as CSSProperties & {
+          '--frame-width': string;
+          '--frame-height': string;
+          zoom?: number;
+        }}
+      >
         <div className="grain" />
         <AnimatePresence initial={false}>
           {mode === 'calendar' ? (
@@ -89,6 +106,7 @@ export function App() {
           {mounted('rejects') && <RejectsScreen key="rejects" />}
           {mounted('shredder') && <ShredderScreen key="shredder" />}
           {mounted('settings') && <SettingsScreen key="settings" />}
+          {mounted('locate') && <LocateScreen key="locate" />}
         </AnimatePresence>
         <IconBar />
       </div>

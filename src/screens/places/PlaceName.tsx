@@ -1,12 +1,12 @@
 // PlaceName.tsx — a place's name in the block header: the user's label,
-// else the offline geocode, else a placeholder. Tap to edit in place; the
-// input is the one element in the app that keeps its case.
+// else the offline geocode, else a placeholder. Tap to edit in place in a
+// TextField, which keeps the case the user types.
 
 import { useState } from 'react';
-import type { KeyboardEvent } from 'react';
 import { CAL, COLOR, FRAME, TYPE } from '../../tokens';
 import type { Place } from '../../api/types';
 import { usePointerGesture } from '../../lib/gesture';
+import { TextField } from '../../components/TextField';
 import { actions, selectPlaceName, useStore } from '../../store/store';
 
 const NAME_W = FRAME.w - 2 * CAL.marginX - 110; // leaves room for the "n stacks" caption
@@ -25,11 +25,6 @@ export function PlaceName({ place }: PlaceNameProps) {
     setDraft(null);
   };
 
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') commit();
-    else if (e.key === 'Escape') setDraft(null);
-  };
-
   const textStyle = {
     position: 'absolute' as const,
     left: CAL.marginX,
@@ -45,15 +40,14 @@ export function PlaceName({ place }: PlaceNameProps) {
 
   if (draft !== null) {
     return (
-      <input
-        autoFocus
+      <TextField
         value={draft}
         placeholder={name}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={setDraft}
+        onEnter={commit}
+        onEscape={() => setDraft(null)}
         onBlur={commit}
-        onKeyDown={onKeyDown}
-        onPointerDown={(e) => e.stopPropagation()}
-        style={{ ...textStyle, textTransform: 'none', userSelect: 'text', WebkitUserSelect: 'text' }}
+        style={textStyle}
       />
     );
   }

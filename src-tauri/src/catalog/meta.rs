@@ -246,57 +246,7 @@ fn camera_name(make: Option<String>, model: Option<String>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use exif::experimental::Writer;
-    use exif::{Field, In, Rational, Tag, Value};
-    use std::io::Cursor;
-
-    fn ascii(tag: Tag, s: &str) -> Field {
-        Field { tag, ifd_num: In::PRIMARY, value: Value::Ascii(vec![s.as_bytes().to_vec()]) }
-    }
-
-    fn dms(tag: Tag, d: u32, m: u32, s_hundredths: u32) -> Field {
-        let r = |num, denom| Rational { num, denom };
-        Field { tag, ifd_num: In::PRIMARY, value: Value::Rational(vec![r(d, 1), r(m, 1), r(s_hundredths, 100)]) }
-    }
-
-    /// A TIFF-shaped EXIF blob for Lisbon (38.7223, -9.1393), shot rotated.
-    fn exif_blob() -> Vec<u8> {
-        let fields = vec![
-            ascii(Tag::Make, "FUJIFILM"),
-            ascii(Tag::Model, "X-T5"),
-            Field { tag: Tag::Orientation, ifd_num: In::PRIMARY, value: Value::Short(vec![6]) },
-            ascii(Tag::DateTimeOriginal, "2024:11:05 14:03:21"),
-            Field { tag: Tag::PixelXDimension, ifd_num: In::PRIMARY, value: Value::Long(vec![600]) },
-            Field { tag: Tag::PixelYDimension, ifd_num: In::PRIMARY, value: Value::Long(vec![400]) },
-            ascii(Tag::GPSLatitudeRef, "N"),
-            dms(Tag::GPSLatitude, 38, 43, 2028),
-            ascii(Tag::GPSLongitudeRef, "W"),
-            dms(Tag::GPSLongitude, 9, 8, 2148),
-        ];
-        let mut writer = Writer::new();
-        for f in &fields {
-            writer.push_field(f);
-        }
-        let mut out = Cursor::new(Vec::new());
-        writer.write(&mut out, false).unwrap();
-        out.into_inner()
-    }
-
-    /// SOI + optional APP1 + a 6×4 baseline SOF0 + EOI: enough for both EXIF
-    /// readers and the header-size probe, no scan data needed.
-    fn jpeg(exif: Option<&[u8]>) -> Vec<u8> {
-        let mut j = vec![0xFF, 0xD8];
-        if let Some(exif) = exif {
-            let len = (2 + 6 + exif.len()) as u16;
-            j.extend_from_slice(&[0xFF, 0xE1, (len >> 8) as u8, len as u8]);
-            j.extend_from_slice(b"Exif\0\0");
-            j.extend_from_slice(exif);
-        }
-        j.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x04, 0x00, 0x06, 0x03]);
-        j.extend_from_slice(&[0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
-        j.extend_from_slice(&[0xFF, 0xD9]);
-        j
-    }
+    use crate::testkit::{jpeg, lisbon_exif};
 
     fn assert_lisbon(meta: &PhotoMeta) {
         assert_eq!(meta.taken_at, "2024-11-05T14:03:21");
@@ -312,7 +262,7 @@ mod tests {
     fn jpeg_via_nom_exif() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("DSCF0001.JPG");
-        std::fs::write(&path, jpeg(Some(&exif_blob()))).unwrap();
+        std::fs::write(&path, jpeg(Some(&lisbon_exif(false)))).unwrap();
         let meta = read_meta(&path, 0);
         assert_lisbon(&meta);
         // Header says 6×4; orientation 6 rotates it to portrait.
@@ -323,7 +273,7 @@ mod tests {
     fn tiff_via_kamadak_exif() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("DSC00001.tif");
-        std::fs::write(&path, exif_blob()).unwrap();
+        std::fs::write(&path, lisbon_exif(false)).unwrap();
         let meta = read_meta(&path, 0);
         assert_lisbon(&meta);
         // No image header to read, so the EXIF 600×400 wins, rotated.

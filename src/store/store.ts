@@ -11,11 +11,14 @@
 import { useSyncExternalStore } from 'react';
 import { api } from '../api/api';
 import type {
+  City,
   DecisionMap,
   Decision,
+  FileFailure,
   Photo,
   Place,
   PlaceLabel,
+  RetagReport,
   ScanEvent,
   Settings,
   Source,
@@ -25,10 +28,12 @@ import type {
 } from '../api/types';
 import { STORAGE_KEY } from '../tokens';
 import type { RectRot } from '../tokens';
+import { preloadImage } from '../lib/image';
 import { monthsOf } from '../domain/calendar';
 import { deckQueue, stackState } from '../domain/deck';
 import type { PhotoIndex, StackState } from '../domain/deck';
-import { SOMEWHERE_ID, clusterPlaces } from '../domain/places';
+import { SOMEWHERE_ID, clusterPlaces, nearestFix } from '../domain/places';
+import type { LatLon } from '../domain/places';
 import { groupRejectsByDay } from '../domain/rejects';
 import type { RejectGroup } from '../domain/rejects';
 import { buildStacks } from '../domain/stacks';
@@ -37,6 +42,10 @@ import type { Mode, PersistedState, Screen, State } from './types';
 
 const PERSIST_DEBOUNCE_MS = 150;
 const PREFETCH_AHEAD = 6;
+/** How long a flashed notice stays up. */
+const NOTICE_MS = 4000;
+/** Photos per locate_photos call: a JPEG on a card can take ~1 s to rewrite, so progress is reported per chunk. */
+const LOCATE_CHUNK = 10;
 
 function initialState(): State {
   return {
@@ -48,10 +57,12 @@ function initialState(): State {
     mode: 'calendar',
     openStackId: null,
     heroOrigin: null,
+    locateStackId: null,
     volumes: [],
     sources: [],
     photos: [],
     scanning: false,
+    pendingTurns: {},
     decisions: {},
     placeLabels: {},
     settings: { ...DEFAULT_SETTINGS },
@@ -202,14 +213,16 @@ export const selectDeckQueue = (s: State, stackId: string | null): Photo[] =>
   queueOf(selectStackById(s, stackId), selectPhotosById(s), s.decisions);
 
 /** The display name of a place: the user's label, else the geocode, else a placeholder. */
-export function selectPlaceName(s: State, place: Place): string {
-  const custom = s.placeLabels[place.id];
+export function placeName(place: Place, labels: State['placeLabels'], names: State['placeNames']): string {
+  const custom = labels[place.id];
   if (custom) return custom;
   if (place.id === SOMEWHERE_ID) return 'somewhere';
-  const label = s.placeNames[place.id];
+  const label = names[place.id];
   if (label === undefined) return 'looking up…';
   return label?.name ?? 'unknown place';
 }
+
+export const selectPlaceName = (s: State, place: Place): string => placeName(place, s.placeLabels, s.placeNames);
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -302,6 +315,90 @@ async function labelNewPlaces(): Promise<void> {
   }
 }
 
+/** Swaps in photos the api re-read after writing their files, keeping catalog order. */
+function replacePhotos(photos: Photo[], updated: Photo[]): Photo[] {
+  if (updated.length === 0) return photos;
+  const byId = new Map(updated.map((p) => [p.id, p]));
+  return photos.map((p) => byId.get(p.id) ?? p);
+}
+
+/** Subtracts `n` settled turns, dropping the entry at zero. */
+function settleTurns(pending: Record<string, number>, id: string, n: number): Record<string, number> {
+  const next = { ...pending };
+  const left = (next[id] ?? 0) - n;
+  if (left > 0) next[id] = left;
+  else delete next[id];
+  return next;
+}
+
+function turnFailureText(f: FileFailure | undefined): string {
+  switch (f?.reason) {
+    case 'unsupported':
+      return 'only jpegs can be turned';
+    case 'read-only':
+      return 'read-only — left as it is';
+    case 'missing':
+      return 'the file is gone';
+    default:
+      return f?.message ? `could not turn it: ${f.message}` : 'could not turn it';
+  }
+}
+
+function locateSummary(r: RetagReport): string {
+  const count = (reason: FileFailure['reason']) => r.failed.filter((f) => f.reason === reason).length;
+  const parts = [
+    r.updated.length > 0 ? `placed ${r.updated.length}` : '',
+    r.kept.length > 0 ? `${r.kept.length} kept their own gps` : '',
+    count('unsupported') > 0 ? `${count('unsupported')} not jpeg` : '',
+    count('read-only') > 0 ? `${count('read-only')} read-only` : '',
+    count('missing') + count('other') > 0 ? `${count('missing') + count('other')} failed` : '',
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : 'nothing to place';
+}
+
+/** Photos with a rotation write in flight; taps that land meanwhile ride along in the next write. */
+const turning = new Set<string>();
+
+/**
+ * Writes a photo's pending turns into its file, one write at a time, until
+ * none are left. Each landed write swaps the re-read photo in and settles
+ * its turns in the same setState, after its new thumb is decoded, so the
+ * card's layout, image and residual turn change in one frame.
+ */
+async function flushTurns(id: string): Promise<void> {
+  if (turning.has(id)) return;
+  turning.add(id);
+  try {
+    for (let n = state.pendingTurns[id] ?? 0; n > 0; n = state.pendingTurns[id] ?? 0) {
+      let landed: Photo | null = null;
+      if (n % 4 !== 0) {
+        let report: RetagReport;
+        try {
+          report = await api.rotatePhoto(id, n % 4);
+        } catch (err) {
+          report = { updated: [], kept: [], failed: [{ id, path: '', reason: 'other', message: String(err) }] };
+        }
+        landed = report.updated[0] ?? null;
+        if (!landed) {
+          setState((s) => ({ pendingTurns: settleTurns(s.pendingTurns, id, Infinity) }));
+          actions.flash(turnFailureText(report.failed[0]));
+          return;
+        }
+        await preloadImage(api.thumbUrl(landed, 1600));
+      }
+      const photo = landed;
+      setState((s) => ({
+        photos: photo ? replacePhotos(s.photos, [photo]) : s.photos,
+        pendingTurns: settleTurns(s.pendingTurns, id, n),
+      }));
+    }
+  } finally {
+    turning.delete(id);
+  }
+}
+
+let flashTimer: ReturnType<typeof setTimeout> | undefined;
+
 /** Warms the 1600 thumbs of queue[from .. PREFETCH_AHEAD): the whole window on open, the newcomer after a decision. */
 function prefetchQueue(stackId: string, from = 0): void {
   const ids = selectDeckQueue(state, stackId)
@@ -391,6 +488,12 @@ export const actions = {
     if (state.openStackId) prefetchQueue(state.openStackId, PREFETCH_AHEAD - 1);
   },
 
+  /** One tap on a card: a clockwise quarter turn, shown at once and written into the JPEG behind it. */
+  rotate(photoId: string): void {
+    setState((s) => ({ pendingTurns: { ...s.pendingTurns, [photoId]: (s.pendingTurns[photoId] ?? 0) + 1 } }));
+    void flushTurns(photoId);
+  },
+
   undecide(photoId: string): void {
     const photo = selectPhotosById(state).get(photoId);
     if (!photo || state.decisions[photo.path] === undefined) return;
@@ -413,6 +516,46 @@ export const actions = {
     setState((s) => ({ screen: 'settings', history: pushHistory(s) }));
   },
 
+  /** Long-press on a stack: the location picker for it. */
+  openLocate(stackId: string): void {
+    setState((s) => ({ screen: 'locate', locateStackId: stackId, history: pushHistory(s) }));
+  },
+
+  /** Cities matching `query`, ranked near where the stack (or the one closest to it in time) was shot. */
+  searchCities(stackId: string, query: string): Promise<City[]> {
+    const stack = selectStackById(state, stackId);
+    const near = stack ? nearestFix(stack, selectStacks(state), selectPhotosById(state)) : null;
+    return api.searchCities(query, near);
+  },
+
+  /**
+   * Writes `point` into the stack's photos in chunks, merging each chunk's
+   * re-read photos so the stack joins its new place as soon as one lands.
+   * Camera GPS is kept (the api decides); the summary says what happened.
+   */
+  async locateStack(stackId: string, point: LatLon): Promise<void> {
+    const stack = selectStackById(state, stackId);
+    if (!stack) return;
+    const ids = stack.photoIds;
+    const total: RetagReport = { updated: [], kept: [], failed: [] };
+    for (let i = 0; i < ids.length; i += LOCATE_CHUNK) {
+      if (ids.length > LOCATE_CHUNK) actions.setNotice(`placing ${Math.min(i + LOCATE_CHUNK, ids.length)} of ${ids.length}…`);
+      let chunk: RetagReport;
+      try {
+        chunk = await api.locatePhotos(ids.slice(i, i + LOCATE_CHUNK), point.lat, point.lon);
+      } catch (err) {
+        total.failed.push({ id: '', path: '', reason: 'other', message: String(err) });
+        break;
+      }
+      total.updated.push(...chunk.updated);
+      total.kept.push(...chunk.kept);
+      total.failed.push(...chunk.failed);
+      if (chunk.updated.length > 0) setState((s) => ({ photos: replacePhotos(s.photos, chunk.updated) }));
+    }
+    actions.flash(locateSummary(total));
+    await labelNewPlaces();
+  },
+
   goBack,
 
   /** AnimatePresence finished the exit animation: release the exiting screen's hero. */
@@ -426,6 +569,7 @@ export const actions = {
   setGapHours(gapHours: number): void {
     const clamped = Math.min(GAP_HOURS.max, Math.max(GAP_HOURS.min, Math.round(gapHours)));
     setState((s) => ({ settings: { ...s.settings, gapHours: clamped } }));
+    void labelNewPlaces(); // regrouped stacks can form places with new centroids
   },
 
   setRemoveRawWithJpg(removeRawWithJpg: boolean): void {
@@ -514,6 +658,7 @@ export const actions = {
         lastShred: report.trashed.length > 0 ? { items: report.trashed, volumeIds: [...volumeIds] } : s.lastShred,
       };
     });
+    void labelNewPlaces(); // a shrunken place has a new centroid, hence a new id
   },
 
   /** Brings the last shred back from the Trash and rescans its volumes. */
@@ -555,6 +700,17 @@ export const actions = {
   },
 
   setNotice(notice: string | null): void {
+    if (flashTimer !== undefined) clearTimeout(flashTimer);
+    flashTimer = undefined;
     setState({ notice });
+  },
+
+  /** A notice that clears itself after NOTICE_MS unless another replaced it. */
+  flash(notice: string): void {
+    actions.setNotice(notice);
+    flashTimer = setTimeout(() => {
+      flashTimer = undefined;
+      if (state.notice === notice) setState({ notice: null });
+    }, NOTICE_MS);
   },
 };

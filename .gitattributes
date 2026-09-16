@@ -1,0 +1,2 @@
+# The vendored GeoNames table keeps its CRLF bytes: geocode.rs embeds it verbatim.
+src-tauri/data/cities.csv -text

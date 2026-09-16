@@ -72,14 +72,25 @@ export type Settings = {
 
 export type TrashedFile = { id: string; from: string; to: string | null };
 
-export type TrashFailure = {
+/** A file the trash or a metadata write could not touch. */
+export type FileFailure = {
   id: string;
   path: string;
-  reason: 'read-only' | 'missing' | 'other';
+  reason: 'read-only' | 'missing' | 'unsupported' | 'other';
   message: string;
 };
 
-export type TrashReport = { trashed: TrashedFile[]; failed: TrashFailure[] };
+export type TrashReport = { trashed: TrashedFile[]; failed: FileFailure[] };
+
+/**
+ * Result of writing orientation or GPS into the files: `updated` are the
+ * photos re-read after the write, `kept` the ids left alone because their
+ * GPS came from the camera, `failed` the ones that could not be written.
+ */
+export type RetagReport = { updated: Photo[]; kept: string[]; failed: FileFailure[] };
+
+/** One row of the offline GeoNames city table; country is the ISO-2 code. */
+export type City = { name: string; admin1: string; country: string; lat: number; lon: number };
 
 export type RestoreReport = { restored: string[]; failed: { path: string; message: string }[] };
 

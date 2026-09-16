@@ -11,8 +11,8 @@ export function setFrameElement(el: HTMLElement | null): void {
   frameEl = el;
 }
 
-/** Current uniform scale of the frame, derived from its live rendered size
- *  (the CSS transform: scale() App applies), not tracked separately. */
+/** Current uniform scale of the frame, derived from its live rendered size.
+ *  This works for both mobile transform scaling and desktop layout zoom. */
 export function frameScale(): number {
   if (!frameEl) return 1;
   const rect = frameEl.getBoundingClientRect();

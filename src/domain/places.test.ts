@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SOMEWHERE_ID, clusterPlaces, haversineKm } from './places';
+import { SOMEWHERE_ID, clusterPlaces, haversineKm, nearestFix, stackCentroid } from './places';
 import { buildStacks } from './stacks';
 import { photo } from './fixtures';
 
@@ -48,5 +48,51 @@ describe('clusterPlaces', () => {
   it('a large radius merges everything into one place', () => {
     const photos = [photo('l', '2024-10-28T09:00:00', { gps: LISBON }), photo('p', '2024-10-31T10:00:00', { gps: PORTO })];
     expect(clusterPlaces(photos, buildStacks(photos, 3), 300)).toHaveLength(1);
+  });
+});
+
+describe('stackCentroid', () => {
+  it('averages the GPS photos and counts them, skipping the rest', () => {
+    const photos = [
+      photo('a', '2024-10-28T09:00:00', { gps: { lat: 38, lon: -9 } }),
+      photo('b', '2024-10-28T09:01:00', { gps: { lat: 40, lon: -8 } }),
+      photo('c', '2024-10-28T09:02:00'),
+    ];
+    const [stack] = buildStacks(photos, 3);
+    const fix = stackCentroid(stack, new Map(photos.map((p) => [p.id, p])));
+    expect(fix?.n).toBe(2);
+    expect(fix?.centroid.lat).toBeCloseTo(39);
+    expect(fix?.centroid.lon).toBeCloseTo(-8.5);
+  });
+
+  it('is null for a stack with no GPS at all', () => {
+    const photos = [photo('a', '2024-10-28T09:00:00')];
+    expect(stackCentroid(buildStacks(photos, 3)[0], new Map(photos.map((p) => [p.id, p])))).toBeNull();
+  });
+});
+
+describe('nearestFix', () => {
+  const photos = [
+    photo('l', '2024-10-28T09:00:00', { gps: LISBON }),
+    photo('p', '2024-10-31T10:00:00', { gps: PORTO }),
+    photo('n', '2024-10-31T20:00:00'), // 10 h after Porto, days after Lisbon
+    photo('m', '2024-10-31T10:30:00', { volumeId: 'local', gps: LISBON }),
+  ];
+  const byId = new Map(photos.map((p) => [p.id, p]));
+  const stacks = buildStacks(photos, 3);
+  const stackOf = (id: string) => stacks.find((s) => s.photoIds.includes(id))!;
+
+  it('is the stack’s own centroid when it has GPS', () => {
+    expect(nearestFix(stackOf('p'), stacks, byId)).toEqual(PORTO);
+  });
+
+  it('borrows the GPS of the stack closest in time', () => {
+    expect(nearestFix(stackOf('n'), stacks, byId)).toEqual(LISBON); // 'm' ended 9.5 h before, Porto 10 h
+  });
+
+  it('is null when nothing has GPS', () => {
+    const bare = [photo('x', '2024-10-28T09:00:00')];
+    const s = buildStacks(bare, 3);
+    expect(nearestFix(s[0], s, new Map(bare.map((p) => [p.id, p])))).toBeNull();
   });
 });

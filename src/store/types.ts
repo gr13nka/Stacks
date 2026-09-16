@@ -1,6 +1,7 @@
 // types.ts — shape of everything the store holds. Catalog data (volumes,
 // photos) is whatever the api streamed in; decisions, place names and
-// settings survive a relaunch; the rest is navigation and in-flight state.
+// settings survive a relaunch; rotations and manual locations live in the
+// photo files themselves; the rest is navigation and in-flight state.
 
 import type {
   DecisionMap,
@@ -15,7 +16,7 @@ import type {
 } from '../api/types';
 import type { RectRot } from '../tokens';
 
-export type Screen = 'main' | 'deck' | 'rejects' | 'shredder' | 'settings';
+export type Screen = 'main' | 'deck' | 'rejects' | 'shredder' | 'settings' | 'locate';
 export type Mode = 'calendar' | 'places';
 export type ShredPhase = 'idle' | 'feeding' | 'trashing' | 'done' | 'failed' | 'restored';
 
@@ -33,6 +34,8 @@ export type State = {
   openStackId: string | null;
   /** Where the current hero flew in from, in frame coords. */
   heroOrigin: RectRot | null;
+  /** The stack the location picker is placing. */
+  locateStackId: string | null;
 
   // catalog
   volumes: Volume[];
@@ -40,6 +43,11 @@ export type State = {
   sources: Source[];
   photos: Photo[];
   scanning: boolean;
+  /**
+   * Clockwise quarter turns tapped on a photo but not yet in its file (keyed
+   * by photo id). Not persisted: the file's EXIF Orientation is the record.
+   */
+  pendingTurns: Record<string, number>;
 
   // persisted
   decisions: DecisionMap;

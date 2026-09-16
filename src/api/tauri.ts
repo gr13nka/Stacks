@@ -8,9 +8,11 @@ import { LazyStore } from '@tauri-apps/plugin-store';
 import type { StacksApi } from './api';
 import type { KeyValueStorage } from '../store/storage';
 import type {
+  City,
   Environment,
   PlaceLabel,
   RestoreReport,
+  RetagReport,
   ScanEvent,
   ScanSummary,
   Source,
@@ -84,13 +86,21 @@ export const tauriApi: StacksApi = {
     return call<ScanSummary>('scan_catalog', { sources, onEvent: channel });
   },
 
-  thumbUrl: (photo, size) => `thumb://localhost/${photo.id}/${size}`,
+  // WKWebView caches by URL; the query (ignored by the Rust handler) makes a
+  // rotated photo a new URL, and four turns land back on the still-valid one.
+  thumbUrl: (photo, size) => `thumb://localhost/${photo.id}/${size}?o=${photo.orientation}`,
 
   originalUrl: (photo) => convertFileSrc(photo.path),
 
   prefetchThumbs: (ids, size) => call<void>('prefetch_thumbs', { ids, size }),
 
   labelPlaces: (points) => call<(PlaceLabel | null)[]>('label_places', { points }),
+
+  searchCities: (query, near) => call<City[]>('search_cities', { query, near: near ? [near.lat, near.lon] : null }),
+
+  rotatePhoto: (id, quarterTurns) => call<RetagReport>('rotate_photo', { id, quarterTurns }),
+
+  locatePhotos: (ids, lat, lon) => call<RetagReport>('locate_photos', { ids, lat, lon }),
 
   trashPhotos: (ids, includeRaw) => call<TrashReport>('trash_photos', { ids, includeRaw }),
 

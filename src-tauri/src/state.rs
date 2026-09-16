@@ -1,5 +1,6 @@
 // state.rs — the one piece of shared memory: the id → files index that the
-// catalog fills and that thumbs and trash read, plus the two on-disk caches.
+// catalog fills and that thumbs, trash and retag read, plus the two on-disk
+// caches and the lock that serialises metadata edits.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -25,6 +26,10 @@ pub struct AppState {
     pub index: RwLock<HashMap<String, Entry>>,
     pub meta_cache: Mutex<MetaCache>,
     pub thumbs: Thumbnailer,
+    /// Held for the whole read-modify-write of one file edit. Commands run on
+    /// parallel blocking threads, so two quick taps would otherwise both read
+    /// the old orientation and one rotation would be lost.
+    pub edits: Mutex<()>,
 }
 
 impl AppState {
@@ -35,6 +40,7 @@ impl AppState {
             index: RwLock::new(HashMap::new()),
             meta_cache: Mutex::new(MetaCache::load(data_dir.join("meta-cache-v1.json"))),
             thumbs: Thumbnailer::new(cache_dir.join("thumbs")),
+            edits: Mutex::new(()),
         }
     }
 

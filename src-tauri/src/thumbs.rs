@@ -55,6 +55,15 @@ impl Thumbnailer {
         self.dir.join(format!("{}-{}.jpg", hex::encode(digest), size))
     }
 
+    /// Drops both cached sizes of a file as it was at `mtime`. A metadata edit
+    /// needs this: the key has no file size in it, and retag restores the
+    /// mtime of photos dated by it, so the old orientation would keep serving.
+    pub fn evict(&self, path: &Path, mtime: u64) {
+        for size in SIZES {
+            let _ = fs::remove_file(self.cache_path(path, size, mtime));
+        }
+    }
+
     /// Blocking: returns the cached thumbnail, generating it first when absent.
     pub fn ensure(&self, entry: &Entry, size: u32) -> Result<PathBuf, String> {
         let out = self.cache_path(&entry.path, size, entry.mtime);
@@ -107,7 +116,9 @@ pub fn handle<R: Runtime>(ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>
     });
 }
 
-/// `/<id>/<size>` → (id, size), size restricted to the two we cache.
+/// `/<id>/<size>` → (id, size), size restricted to the two we cache. The
+/// frontend appends `?o=<orientation>` so the webview's URL cache misses after
+/// a rotation; that query never reaches here (`uri().path()` excludes it).
 fn parse_path(path: &str) -> Option<(String, u32)> {
     let mut parts = path.trim_matches('/').split('/');
     let id = parts.next().filter(|s| !s.is_empty())?;
@@ -140,7 +151,7 @@ fn plain(status: StatusCode, message: &str) -> Response<Vec<u8>> {
 /// ImageIO: open → thumbnail (orientation applied, longest edge ≤ size) →
 /// JPEG. Written to a temp name and renamed so a concurrent reader never sees
 /// a half-written cache file.
-fn generate(src: &Path, size: u32, out: &Path) -> Result<(), String> {
+pub(crate) fn generate(src: &Path, size: u32, out: &Path) -> Result<(), String> {
     if let Some(dir) = out.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -240,6 +251,26 @@ mod tests {
         assert_eq!(parse_path("/abc123"), None);
         assert_eq!(parse_path("/abc123/512/extra"), None);
         assert_eq!(parse_path("//512"), None);
+    }
+
+    #[test]
+    fn query_string_does_not_reach_the_path_parser() {
+        let request = Request::builder().uri("thumb://localhost/abc123/1600?o=6").body(Vec::<u8>::new()).unwrap();
+        assert_eq!(parse_path(request.uri().path()), Some(("abc123".into(), 1600)));
+    }
+
+    #[test]
+    fn evict_removes_both_sizes_for_that_mtime_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let t = Thumbnailer::new(dir.path().join("thumbs"));
+        let p = Path::new("/a.jpg");
+        for (size, mtime) in [(512, 1), (1600, 1), (512, 2)] {
+            fs::write(t.cache_path(p, size, mtime), b"x").unwrap();
+        }
+        t.evict(p, 1);
+        assert!(!t.cache_path(p, 512, 1).exists());
+        assert!(!t.cache_path(p, 1600, 1).exists());
+        assert!(t.cache_path(p, 512, 2).exists());
     }
 
     #[test]

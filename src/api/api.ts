@@ -2,10 +2,12 @@
 // adapters behind it (tauri.ts, mock.ts) may import @tauri-apps/*.
 import type { KeyValueStorage } from '../store/storage';
 import type {
+  City,
   Environment,
   Photo,
   PlaceLabel,
   RestoreReport,
+  RetagReport,
   ScanEvent,
   ScanSummary,
   Source,
@@ -13,6 +15,7 @@ import type {
   TrashReport,
   Volume,
 } from './types';
+import type { LatLon } from '../domain/places';
 import { tauriApi } from './tauri';
 import { mockApi } from './mock';
 
@@ -26,14 +29,23 @@ export interface StacksApi {
   defaultSources(): Promise<Source[]>;
   /** Streams photos in batches through onEvent while the walk runs; resolves with the totals. */
   scanCatalog(sources: Source[], onEvent: (e: ScanEvent) => void): Promise<ScanSummary>;
-  /** `thumb://localhost/${id}/${size}` — an orientation-corrected JPEG. */
+  /** An orientation-corrected JPEG; the URL changes with photo.orientation so a rotation is never served from cache. */
   thumbUrl(photo: Photo, size: ThumbSize): string;
   /** The full-size primary file (convertFileSrc). */
   originalUrl(photo: Photo): string;
   prefetchThumbs(ids: string[], size: ThumbSize): Promise<void>;
   /** Offline nearest-city labels, one per [lat, lon]; null when nothing is within 100 km. */
   labelPlaces(points: [number, number][]): Promise<(PlaceLabel | null)[]>;
-  /** Moves the primaries (and RAWs when includeRaw) to the Trash. The only call that touches disk. */
+  /** Offline city search, best match first; `near` breaks ties between same-named cities. */
+  searchCities(query: string, near: LatLon | null): Promise<City[]>;
+  /**
+   * Turns the photo clockwise by writing the EXIF Orientation of its JPEG
+   * (never pixels, never the RAW). RAW-only and non-JPEG photos fail as 'unsupported'.
+   */
+  rotatePhoto(id: string, quarterTurns: number): Promise<RetagReport>;
+  /** Writes GPS into each JPEG that has none (or a previous manual one); camera GPS is kept. */
+  locatePhotos(ids: string[], lat: number, lon: number): Promise<RetagReport>;
+  /** Moves the primaries (and RAWs when includeRaw) to the Trash. The only call that moves or removes files. */
   trashPhotos(ids: string[], includeRaw: boolean): Promise<TrashReport>;
   restoreTrashed(items: TrashedFile[]): Promise<RestoreReport>;
   pickFolder(): Promise<string | null>;

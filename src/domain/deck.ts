@@ -95,6 +95,21 @@ export function cardFitRect(aspect: number | null, border: number = PRINT.border
 }
 
 /**
+ * Scale for a card laid out at cardFitRect(aspect) but shown turned by
+ * `turns` quarter turns: after an odd number of turns it must cover the rect
+ * the turned photo will get, cardFitRect(1 / aspect). Both rects are centred
+ * in DECK.box, so turning about the card's centre needs no translation.
+ */
+export function turnedCardScale(aspect: number | null, turns: number): number {
+  if (turns % 2 === 0) return 1;
+  const a = aspect && aspect > 0 ? aspect : DEFAULT_ASPECT;
+  const laid = cardFitRect(a);
+  const turned = cardFitRect(1 / a);
+  // Turned, the laid card is laid.h wide and laid.w tall.
+  return Math.min(turned.w / laid.h, turned.h / laid.w);
+}
+
+/**
  * What a released swipe means: the projected travel (position + velocity ×
  * GESTURE.projectMs) or the release velocity alone can commit; right keeps,
  * left removes; anything else returns the card. vx is px/ms.

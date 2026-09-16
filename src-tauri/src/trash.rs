@@ -1,4 +1,5 @@
-// trash.rs — the only code that touches the user's files. Moves go through
+// trash.rs — the only code that moves or removes the user's files (retag.rs
+// is the only other writer, and it changes metadata only). Moves go through
 // NSFileManager's trash so Finder's "Put Back" works and cards get their own
 // `.Trashes`; the resulting URL is remembered so undo is an exact rename back.
 
@@ -11,8 +12,8 @@ use objc2_foundation::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::failure::{precheck, FailReason, FileFailure};
 use crate::state::AppState;
-use crate::volumes;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -23,28 +24,11 @@ pub struct TrashedFile {
     pub to: Option<String>,
 }
 
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum FailReason {
-    ReadOnly,
-    Missing,
-    Other,
-}
-
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct TrashFailure {
-    pub id: String,
-    pub path: String,
-    pub reason: FailReason,
-    pub message: String,
-}
-
 #[derive(Serialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TrashReport {
     pub trashed: Vec<TrashedFile>,
-    pub failed: Vec<TrashFailure>,
+    pub failed: Vec<FileFailure>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -67,7 +51,7 @@ pub fn trash_photos(state: &AppState, ids: &[String], include_raw: bool) -> Tras
     let mut report = TrashReport::default();
     for id in ids {
         let Some(entry) = state.entry(id) else {
-            report.failed.push(TrashFailure {
+            report.failed.push(FileFailure {
                 id: id.clone(),
                 path: String::new(),
                 reason: FailReason::Missing,
@@ -92,7 +76,7 @@ pub fn trash_photos(state: &AppState, ids: &[String], include_raw: bool) -> Tras
                     });
                 }
                 Err((reason, message)) => {
-                    report.failed.push(TrashFailure { id: id.clone(), path, reason, message });
+                    report.failed.push(FileFailure { id: id.clone(), path, reason, message });
                 }
             }
         }
@@ -137,15 +121,8 @@ pub fn restore(items: &[TrashedFile]) -> RestoreReport {
     report
 }
 
-/// Read-only volumes are refused before the call: NSFileManager would fail
-/// anyway, but slower and with a less specific error.
 fn trash_file(path: &Path) -> Result<Option<PathBuf>, (FailReason, String)> {
-    if fs::symlink_metadata(path).is_err() {
-        return Err((FailReason::Missing, "the file no longer exists".into()));
-    }
-    if volumes::is_read_only(path) {
-        return Err((FailReason::ReadOnly, "the volume is read-only".into()));
-    }
+    precheck(path)?;
     let url = NSURL::from_file_path(path)
         .ok_or((FailReason::Other, "the path cannot be represented as a URL".to_string()))?;
     let mut landed: Option<Retained<NSURL>> = None;
@@ -250,10 +227,5 @@ mod tests {
         assert!(report.failed.is_empty(), "{:?}", report.failed);
         assert_eq!(fs::read(&file).unwrap(), b"disposable");
         assert!(!landed.exists());
-    }
-
-    #[test]
-    fn failure_reasons_serialise_kebab_case() {
-        assert_eq!(serde_json::to_string(&FailReason::ReadOnly).unwrap(), "\"read-only\"");
     }
 }
