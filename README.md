@@ -9,13 +9,13 @@ Scans a card or a folder and groups each shoot into stacks by time. Rejects go t
 
 [Guide](docs/GUIDE.md) · [What it writes to your files](docs/GUIDE.md#what-it-writes-to-your-files)
 
-<img src="docs/images/calendar.png" alt="A countdown calendar, November above October, with a stack of prints sitting on each day that was shot" width="100%">
+<img src="docs/images/calendar.png" alt="A countdown calendar, November above October, with a stack of prints sitting on each day that was shot" width="300">
 
 </div>
 
 ## The deck
 
-<img src="docs/images/deck.apng" alt="A card swiped right to keep, then left, where it lands on a reject pile at the edge of the screen" width="400">
+<img src="docs/images/deck.apng" alt="A card swiped right to keep, then left, where it lands on a reject pile at the edge of the screen" width="240">
 
 A JPG and its RAW twin are one card and one decision. The arrow keys do what the swipe does. [Stacks, places and the deck →](docs/GUIDE.md#stacks-places-and-the-deck)
 
@@ -38,7 +38,7 @@ npm run app:fixtures
 
 ## The shredder
 
-<img src="docs/images/shredder.png" alt="The reject pile above a dark cavity, with shred and not yet at the bottom" width="100%">
+<img src="docs/images/shredder.png" alt="The reject pile above a dark cavity, with shred and not yet at the bottom" width="260">
 
 Nothing moves until the last print has gone through. Then the files go to the Trash, and you have 20 seconds to put them back. [What it writes to your files →](docs/GUIDE.md#what-it-writes-to-your-files)
 
