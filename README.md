@@ -38,9 +38,9 @@ npm run app:fixtures
 
 ## The shredder
 
-<img src="docs/images/shredder.png" alt="The reject pile above a dark cavity, with shred and not yet at the bottom" width="260">
+<img src="docs/images/shredder.apng" alt="The reject pile fed one print at a time into a dark cavity, each one falling out below the seam as strips, ending on gone, 4 prints in the trash" width="260">
 
-Nothing moves until the last print has gone through. Then the files go to the Trash, and you have 20 seconds to put them back. [What it writes to your files →](docs/GUIDE.md#what-it-writes-to-your-files)
+Nothing moves until the last print has gone through. Then the files go to the Trash, and the undo stays for 20 seconds. [What it writes to your files →](docs/GUIDE.md#what-it-writes-to-your-files)
 
 ## FAQ
 
